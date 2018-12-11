@@ -46,12 +46,6 @@ export const PERMISSION_DENIED = 'denied';
 export const PERMISSION_GRANTED = 'granted';
 export const PERMISSION_PROMPT = 'default';
 
-// Browsers
-export const BROWSER_TYPE_SAFARI: number = 10;
-export const BROWSER_TYPE_CHROME: number = 11;
-export const BROWSER_TYPE_FF: number = 12;
-export const BROWSER_TYPE_EDGE: number = 15;
-
 // Events
 export const EVENT_ON_READY = 'onReady';
 export const EVENT_ON_SUBSCRIBE = 'onSubscribe';

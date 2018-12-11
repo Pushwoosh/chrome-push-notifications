@@ -5,7 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="shortcut icon" href="https://www.pushwoosh.com/img/favicon.ico" type="image/x-icon" />
-    <link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="manifest.json">
     <script>
         var Pushwoosh = Pushwoosh || [];
         Pushwoosh.push(["init", <%=htmlWebpackPlugin.options.externals.initParams%>]);
@@ -72,7 +72,9 @@
     </p>
 
     <p>Params:</p>
-    <pre id="deviceParams"></pre>
+    <table id="deviceParams" border="1" cellpadding="5" cellspacing="0" bordercolor="lightgrey">
+      <tbody></tbody>
+    </table>
 
     <fieldset>
         <legend>GDPR communication</legend>
@@ -208,14 +210,26 @@
       }]);
 
       function checkSubscription() {
-        Pushwoosh.isSubscribed().then(function(res) {
+        Pushwoosh.isSubscribed().then(function (res) {
           toggleNodesVisibility('.subscription-status', res ? 'actionUnsubscribe' : 'actionSubscribe');
-        }).catch(function(err) {
+        }).catch(function (err) {
           console.error('Is subscribed error', err);
         });
 
-        Pushwoosh.getParams().then(function(params) {
-          document.querySelector('#deviceParams').innerHTML = JSON.stringify(params, null, 2) || '';
+        Pushwoosh.getParams().then(function (params) {
+          var table = document.querySelector('#deviceParams tbody');
+          table.innerHTML = '';
+          Object.keys(params).map(function(key) {
+            var row = '<tr><td>'+key+'</td><td><pre>'+JSON.stringify(params[key], null, 2) || ''+'</pre></td></tr>';
+            table.insertAdjacentHTML('beforeend', row);
+          });
+        });
+      }
+
+      function toggleNodesVisibility(selector, id) {
+        var nodes = document.querySelectorAll(selector);
+        [].forEach.call(nodes, function (el) {
+          el.style.display = el.id === id ? 'inline' : 'none';
         });
       }
 

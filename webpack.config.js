@@ -8,36 +8,14 @@ const CleanWebpackPlugin = require('clean-webpack-plugin');
 const ScriptExtHtmlWebpackPlugin = require('script-ext-html-webpack-plugin');
 const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
-
-let config = {};
-
-if (fs.existsSync('./develop/config.js')) {
-  config = require('./develop/config');
-}
-else {
-    console.log('\x1b[31m%s\x1b[0m\n', 'develop/config.js is undefined');
-}
-
-if (process.env.MANIFEST_DATA) {
-  config.manifest = JSON.parse(process.env.MANIFEST_DATA);
-}
-
-if (process.env.INIT_PARAMS) {
-  config.initParams = JSON.parse(process.env.INIT_PARAMS);
-}
-
+const config = require('./config').configBuilder;
 const isProduction = process.env.NODE_ENV === 'production';
-const initParams = Object.assign({}, config.initParams);
-if (isProduction) {
-  delete initParams.driversSettings;
-}
 
 const apiUrlValue = process.env.API_URL || '';
 const defines = {
   __VERSION__: JSON.stringify(require('./package.json').version),
   __API_URL__: JSON.stringify(apiUrlValue)
 };
-
 
 const devServer = {
   host: process.env.HOST || '0.0.0.0',
@@ -54,7 +32,6 @@ if (config.ssl && config.ssl.key && config.ssl.cert) {
     cert: fs.readFileSync(config.ssl.cert)
   };
 }
-
 
 module.exports = {
   mode: isProduction ? 'production' : 'development',
@@ -110,7 +87,7 @@ module.exports = {
       inject: true,
       template: 'develop/index.html',
       externals: {
-        initParams: JSON.stringify(initParams)
+        initParams: JSON.stringify(config.initParams)
       },
       excludeChunks: ['service-worker'],
       minify: false,

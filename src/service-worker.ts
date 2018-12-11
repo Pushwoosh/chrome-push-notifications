@@ -28,7 +28,7 @@ async function broadcastClients(msg: IPWBroadcastClientsParams) {
   });
 }
 
-async function JSONParse(json: string, defaultValue?: any) {
+async function JSONParse(json: any, defaultValue?: any) {
   if (typeof json === 'string') {
     try {
       return JSON.parse(json);
@@ -49,6 +49,7 @@ async function parsePushEvent(event: PushEvent, initParams: IPWParams): Promise<
   const customData = await JSONParse(notificationData.u, {});
 
   return {
+    ...notificationData,
     title: notificationData.header || initParams.defaultNotificationTitle || DEFAULT_NOTIFICATION_TITLE,
     body: notificationData.body,
     buttons,
@@ -59,6 +60,7 @@ async function parsePushEvent(event: PushEvent, initParams: IPWParams): Promise<
     campaignCode: notificationData.pwcid || '',
     duration: prepareDuration(notificationData.duration),
     openUrl: notificationData.l || DEFAULT_NOTIFICATION_URL,
+    badge: notificationData.badge
   };
 }
 

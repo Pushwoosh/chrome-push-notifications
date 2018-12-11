@@ -1,18 +1,14 @@
 import EventEmitter from './EventEmitter';
 import API from './API';
 import {
-  isSafariBrowser,
-  getBrowserVersion,
-  getBrowserType,
-  canUseServiceWorkers,
   getPushwooshUrl,
   getVersion,
   patchPromise,
   clearLocationHash,
   validateParams,
-  isSupportSDK,
-  canUsePromise
 } from './functions';
+import {PlatformChecker} from './modules/PlatformChecker';
+
 import {
   DEFAULT_SERVICE_WORKER_URL,
   KEY_API_PARAMS,
@@ -64,6 +60,7 @@ type ChainFunction = (param: any) => Promise<any> | any;
 patchPromise();
 
 class Pushwoosh {
+  private platformChecker: PlatformChecker;
   private params: IInitParamsWithDefaults;
   private _initParams: IInitParams;
   private _ee: EventEmitter = new EventEmitter();
@@ -72,10 +69,25 @@ class Pushwoosh {
 
   public api: API;
   public driver: IPWDriver;
-  public isSafari: boolean = isSafariBrowser();
   public permissionOnInit: string;
   public ready: boolean = false;
   public subscribeWidgetConfig: ISubscribeWidget;
+
+  constructor(platformChecker: PlatformChecker = new PlatformChecker()) {
+    this.platformChecker = platformChecker;
+    this._onPromises = {};
+
+    if (this.platformChecker.isAvailablePromise) {
+      this._onPromises = {
+        [EVENT_ON_PERMISSION_DENIED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_DENIED, resolve)),
+        [EVENT_ON_PERMISSION_PROMPT]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_PROMPT, resolve)),
+        [EVENT_ON_PERMISSION_GRANTED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_GRANTED, resolve)),
+      };
+    }
+
+    // Bindings
+    this.onServiceWorkerMessage = this.onServiceWorkerMessage.bind(this);
+  }
 
   /**
    * Method that puts the stored error/info messages to browser console.
@@ -95,21 +107,6 @@ class Pushwoosh {
       items.forEach((i: any) => console.log(i));
     }
   };
-
-  constructor() {
-    this._onPromises = {};
-
-    if (canUsePromise()) {
-      this._onPromises = {
-        [EVENT_ON_PERMISSION_DENIED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_DENIED, resolve)),
-        [EVENT_ON_PERMISSION_PROMPT]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_PROMPT, resolve)),
-        [EVENT_ON_PERMISSION_GRANTED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_GRANTED, resolve)),
-      };
-    }
-
-    // Bindings
-    this.onServiceWorkerMessage = this.onServiceWorkerMessage.bind(this);
-  }
 
   /**
    * Method invoking the transmitted callback when the API is ready
@@ -148,7 +145,7 @@ class Pushwoosh {
    *
    * @param cmd
    */
-  public push(cmd: PWInput) {
+  public async push(cmd: PWInput) {
     if (typeof cmd === 'function') {
       this.onReadyHandler(cmd);
     }
@@ -156,12 +153,20 @@ class Pushwoosh {
       const [cmdName, cmdFunc] = cmd;
       switch (cmdName) {
         case 'init':
-          if (this.shouldInit()) {
+          if (this.platformChecker.isAvailableNotifications) {
             if (typeof cmdFunc !== 'object') {
               break;
             }
-            this.init(cmdFunc)
-                .catch(e => Logger.write('info', 'Pushwoosh init failed', e));
+
+            try {
+              await this.init(cmdFunc);
+            }
+            catch (e) {
+              Logger.write('info', 'Pushwoosh init failed', e)
+            }
+          }
+          else {
+            Logger.write('info', 'This browser does not support pushes');
           }
           break;
         case EVENT_ON_READY:
@@ -201,19 +206,6 @@ class Pushwoosh {
   }
 
   /**
-   * Method returns false if device does not support pushes.
-   * @returns {boolean}
-   */
-  public shouldInit() {
-    if (!isSupportSDK()) {
-      Logger.write('info', 'This browser does not support pushes');
-      return false;
-    }
-
-    return true;
-  }
-
-  /**
    * Method initiates PW services.
    * @param {IInitParams} initParams
    * @returns {Promise<void>}
@@ -243,11 +235,11 @@ class Pushwoosh {
       serviceWorkerUrl: null,
       pushwooshUrl,
       ...initParams,
-      deviceType: getBrowserType(),
+      deviceType: this.platformChecker.platform,
       tags: {
         Language: navigator.language || 'en',
         ...initParams.tags,
-        'Device Model': getBrowserVersion(),
+        'Device Model': this.platformChecker.browserVersion,
       },
       driversSettings: {
         worker: {
@@ -268,7 +260,7 @@ class Pushwoosh {
     Logger.setLevel(manualDebug || logLevel);
 
     // Init worker driver
-    if (canUseServiceWorkers()) {
+    if (this.platformChecker.isAvailableServiceWorker) {
       const {worker} = params.driversSettings;
       this.driver = new WorkerDriver({
         eventEmitter: this._ee,
@@ -288,7 +280,7 @@ class Pushwoosh {
     }
 
     // Init safari driver
-    else if (this.isSafari && params.safariWebsitePushID) {
+    else if (this.platformChecker.isSafari && params.safariWebsitePushID) {
       this.driver = new SafariDriver({
         eventEmitter: this._ee,
         applicationCode,
@@ -386,9 +378,9 @@ class Pushwoosh {
 
       await this.driver.askSubscribe(this.isDeviceRegistered());
 
-      if (!this.isDeviceRegistered()) {
-        await this.registerDuringSubscribe();
-      }
+      // always re-register device, because push credentials(pushToken, fcmToken, fcmPushSet) always updated
+      await this.registerDuringSubscribe();
+
       if (!subscribed) {
         await this.onSubscribeEmitter();
       }
@@ -404,7 +396,7 @@ class Pushwoosh {
    */
   private async registerDuringSubscribe() {
     const subscribed = await this.driver.isSubscribed();
-    if (this.isSafari) {
+    if (this.platformChecker.isSafari) {
       const force = await this.needForcedOpen();
       await this.open(force);
     }
@@ -456,7 +448,7 @@ class Pushwoosh {
    * @returns {Promise<boolean>}
    */
   public async isSubscribed(): Promise<boolean> {
-    const deviceRegistration = this.isSafari || this.isDeviceRegistered();
+    const deviceRegistration = this.platformChecker.isSafari || this.isDeviceRegistered();
     return deviceRegistration && this.driver.isSubscribed() || false;
   }
 
@@ -575,7 +567,7 @@ class Pushwoosh {
     const curTime = Date.now();
     const val = await keyValue.get(KEY_LAST_SENT_APP_OPEN);
     const lastSentTime = isNaN(val) ? 0 : Number(val);
-    if (this.isSafari && !apiParams.hwid) {
+    if (this.platformChecker.isSafari && !apiParams.hwid) {
       return Promise.resolve();
     }
     if (force || (curTime - lastSentTime) > PERIOD_SEND_APP_OPEN) {
@@ -591,7 +583,7 @@ class Pushwoosh {
    * @returns {Promise<any>}
    */
   private async needForcedOpen() {
-    if (!this.isSafari) {
+    if (!this.platformChecker.isSafari) {
       return Promise.resolve(false);
     }
     const previousPermission = await keyValue.get(KEY_SAFARI_PREVIOUS_PERMISSION);
@@ -640,14 +632,14 @@ class Pushwoosh {
       case PERMISSION_DENIED:
         this._ee.emit(EVENT_ON_PERMISSION_DENIED);
         // if permission === PERMISSION_DENIED and device is registered do unsubscribe (unregister device)
-        if (!this.isSafari && this.isDeviceRegistered()) {
+        if (!this.platformChecker.isSafari && this.isDeviceRegistered()) {
           await this.unsubscribe();
         }
         localStorage.removeItem(KEY_DEVICE_REGISTRATION_STATUS);
         break;
       case PERMISSION_PROMPT:
         // if permission === PERMISSION_PROMPT and device is registered do unsubscribe (unregister device)
-        if (!this.isSafari && this.isDeviceRegistered()) {
+        if (!this.platformChecker.isSafari && this.isDeviceRegistered()) {
           await this.unsubscribe();
         }
         localStorage.removeItem(KEY_DEVICE_REGISTRATION_STATUS);
@@ -661,7 +653,7 @@ class Pushwoosh {
         this._ee.emit(EVENT_ON_PERMISSION_GRANTED);
         const trySubscribe = await keyValue.get(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS); // try subscribe if unsubscribed due to undefined fcm keys PUSH-16049
         // if permission === PERMISSION_GRANTED and device is not registered do subscribe
-        if ((!this.isSafari && !this.isDeviceRegistered() && !this.isDeviceUnregistered()) || this._isNeedResubscribe || trySubscribe) {
+        if ((!this.platformChecker.isSafari && !this.isDeviceRegistered() && !this.isDeviceUnregistered()) || this._isNeedResubscribe || trySubscribe) {
           await this.subscribe();
           await keyValue.set(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS, false);
         }

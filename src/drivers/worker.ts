@@ -5,9 +5,10 @@ import {
   getPublicKey,
   getAuthToken,
   urlB64ToUint8Array,
-  getBrowserType,
   getVersion
 } from '../functions'
+import platformChecker from '../modules/PlatformChecker';
+
 import {
   PERMISSION_PROMPT,
   PERMISSION_DENIED,
@@ -64,7 +65,7 @@ class WorkerDriver implements IPWDriver {
     eventEmitter.emit(event);
   }
 
-  async askSubscribe(isDeviceRegistered?:boolean) {
+  async askSubscribe(isDeviceRegistered?: boolean) {
     const serviceWorkerRegistration = await navigator.serviceWorker.ready;
     const subscription = await serviceWorkerRegistration.pushManager.getSubscription();
 
@@ -96,7 +97,7 @@ class WorkerDriver implements IPWDriver {
     }
 
     const options: any = {userVisibleOnly: true};
-    if (getBrowserType() == 11 && this.params.applicationServerPublicKey) {
+    if (<TPlatformChrome>platformChecker.platform == 11 && this.params.applicationServerPublicKey) {
       options.applicationServerKey = urlB64ToUint8Array(this.params.applicationServerPublicKey);
     }
     const subscription = await registration.pushManager.subscribe(options);

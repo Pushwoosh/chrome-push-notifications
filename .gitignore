@@ -3,6 +3,7 @@ syntax: glob
 .idea
 lib/*
 dist/*
+config/config.local.js
 node_modules
 debug.html
 debug.js
@@ -10,3 +11,6 @@ npm-debug.log
 package-lock.json
 yarn.lock
 ts-build
+
+.nyc_output
+coverage

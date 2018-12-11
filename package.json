@@ -1,6 +1,6 @@
 {
   "name": "web-push-notifications",
-  "version": "3.2.19",
+  "version": "3.2.23-next",
   "description": "Pushwoosh web push notifications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -10,7 +10,10 @@
     "build:prod": "cross-env NODE_ENV=production webpack",
     "zip": "node scripts/zip.js",
     "release": "npm run build:prod && npm run zip",
-    "start": "cross-env NODE_ENV=development webpack-dev-server"
+    "start": "cross-env NODE_ENV=development webpack-dev-server",
+    "test": "mocha",
+    "test:watch": "mocha --watch",
+    "test:coverage": "nyc mocha"
   },
   "repository": {
     "type": "git",
@@ -32,27 +35,61 @@
   },
   "homepage": "https://github.com/Pushwoosh/web-push-notifications#readme",
   "devDependencies": {
+    "@types/chai": "4.1.6",
+    "@types/jsdom": "12.2.0",
+    "@types/mocha": "5.2.5",
     "@types/node": "10.1.2",
+    "@types/sinon": "5.0.5",
     "@types/whatwg-streams": "0.0.5",
     "archiver": "2.1.0",
     "autoprefixer": "7.1.6",
     "awesome-typescript-loader": "5.0.0",
+    "chai": "4.2.0",
     "clean-webpack-plugin": "0.1.17",
     "cross-env": "5.1.1",
     "css-loader": "0.28.7",
     "generate-json-webpack-plugin": "0.2.2",
-    "glob": "7.1.2",
     "html-webpack-plugin": "3.2.0",
-    "http-server": "0.9.0",
+    "http-server": "0.11.1",
+    "jsdom": "12.2.0",
+    "mocha": "5.2.0",
+    "nyc": "13.1.0",
     "postcss-loader": "2.0.8",
     "script-ext-html-webpack-plugin": "2.0.1",
+    "sinon": "7.1.1",
+    "source-map-support": "^0.5.9",
     "to-string-loader": "1.1.5",
+    "ts-node": "7.0.1",
     "tslint": "5.10.0",
     "tslint-loader": "3.6.0",
     "typescript": "2.8.3",
-    "uglifyjs-webpack-plugin": "^1.2.5",
+    "uglifyjs-webpack-plugin": "1.2.7",
     "webpack": "4.8.3",
     "webpack-cli": "2.1.3",
-    "webpack-dev-server": "3.1.4"
+    "webpack-dev-server": "^3.1.10"
+  },
+  "dependencies": {},
+  "nyc": {
+    "extension": [
+      ".ts"
+    ],
+    "exclude": [
+      "**/*.d.ts",
+      "**/coverage/**",
+      "**/test/**",
+      "**/config/**",
+      "**/assets/**",
+      "testRegister.js",
+      "webpack.config.js",
+      "webpack.lib.config.js",
+      "dist/",
+      "lib/",
+      "develop/",
+      "scripts/"
+    ],
+    "reporter": [
+      "html"
+    ],
+    "all": true
   }
 }

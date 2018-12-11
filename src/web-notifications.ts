@@ -1,6 +1,6 @@
 import PushwooshSingleton from './Pushwoosh';
 import {getGlobal} from './functions';
-import 'subscribe_widget';
+import 'SubscribeWidget';
 
 function main() {
   const global = getGlobal();

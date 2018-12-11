@@ -7,12 +7,14 @@ import {
   KEY_COMMUNICATION_ENABLED,
   KEY_DEVICE_DATA_REMOVED
 } from './constants';
+
 import {
   getVersion,
-  isSafariBrowser,
   validateParams,
   sendInternalPostEvent
 } from './functions';
+import platformChecker from './modules/PlatformChecker';
+
 import {keyValue} from './storage';
 import Logger, {logAndThrowError} from './logger';
 
@@ -41,10 +43,6 @@ export default class PushwooshAPI {
     return this.apiParams;
   }
 
-  get isSafari() {
-    return isSafariBrowser();
-  }
-
   async getParams() {
     const {
       [KEY_API_PARAMS]: apiParams,
@@ -65,7 +63,7 @@ export default class PushwooshAPI {
     }
 
     const {hwid = '', applicationCode = '', userId = ''} = params;
-    if (this.isSafari && !hwid) {
+    if (platformChecker.isSafari && !hwid) {
       return;
     }
     const customUserId = methodParams && methodParams.userId;
@@ -85,7 +83,7 @@ export default class PushwooshAPI {
   async registerDevice() {
     const params: IPWParams = await this.getParams();
 
-    if (!params.pushToken || this.isSafari) {
+    if (!params.pushToken || platformChecker.isSafari) {
       return;
     }
 
@@ -115,7 +113,7 @@ export default class PushwooshAPI {
   }
 
   async unregisterDevice() {
-    if (this.isSafari) {
+    if (platformChecker.isSafari) {
       return;
     }
 

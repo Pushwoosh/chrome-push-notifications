@@ -29,7 +29,8 @@ module.exports = {
   output: {
     path: path.join(__dirname, 'lib'),
     filename: '[name].js',
-    libraryTarget: 'umd'
+    libraryTarget: 'umd',
+    globalObject: 'this'  // service worker self
   },
   resolve: {
     extensions: ['.ts'],

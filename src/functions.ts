@@ -3,14 +3,11 @@ import {
   KEY_API_BASE_URL,
   KEY_FAKE_PUSH_TOKEN,
   KEY_FCM_SUBSCRIPTION,
-  BROWSER_TYPE_CHROME,
-  BROWSER_TYPE_FF,
-  BROWSER_TYPE_SAFARI,
-  BROWSER_TYPE_EDGE,
   KEY_INTERNAL_EVENTS,
   DEFAULT_NOTIFICATION_DURATION,
   MAX_NOTIFICATION_DURATION
 } from './constants';
+import platformChecker from './modules/PlatformChecker';
 
 type TPushSubscription = PushSubscription | null;
 
@@ -20,73 +17,6 @@ export function getGlobal() {
 
 export function getVersion() {
   return __VERSION__;
-}
-
-export function isSafariBrowser(): boolean {
-  const global = getGlobal();
-  return !!global.safari && navigator.userAgent.indexOf('Safari') > -1;
-}
-
-export function isOperaBrowser(): boolean {
-  return navigator.userAgent.indexOf('Opera') !== -1 || navigator.userAgent.indexOf('OPR') !== -1;
-}
-
-export function isEdgeBrowser(): boolean {
-  return navigator.userAgent.indexOf('Edge') > -1;
-}
-
-export function canUseServiceWorkers() {
-  return navigator.serviceWorker && 'PushManager' in window && 'Notification' in window;
-}
-
-export function isSupportSDK() {
-  return (isSafariBrowser() && getDeviceName() === 'PC') || canUseServiceWorkers();
-}
-
-type TBrowserType = typeof BROWSER_TYPE_SAFARI | typeof BROWSER_TYPE_CHROME | typeof BROWSER_TYPE_FF | typeof BROWSER_TYPE_EDGE;
-export function getBrowserType(): TBrowserType {
-  if (isSafariBrowser()) {
-    return BROWSER_TYPE_SAFARI;
-  }
-
-  if (isEdgeBrowser()) {
-    return BROWSER_TYPE_EDGE;
-  }
-
-  return ~navigator.userAgent.toLowerCase().indexOf('firefox')
-    ? BROWSER_TYPE_FF
-    : BROWSER_TYPE_CHROME;
-}
-
-export function getBrowserVersion() {
-  const userAgent = navigator.userAgent;
-  let match = userAgent.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
-  let version = null;
-
-  if (/trident/i.test(match[1])) {
-    version = /\brv[ :]+(\d+)/g.exec(userAgent) || [];
-    return `IE ${version[1] || ''}`;
-  }
-
-  if (match[1] === 'Chrome') {
-    const operaVersion = userAgent.match(/\bOPR\/(\d+)/);
-    if (operaVersion !== null) {
-      return `Opera ${operaVersion[1]}`;
-    }
-
-    const edgeVersion = userAgent.match(/\bEdge\/(\d+)/);
-    if (edgeVersion !== null) {
-      return `Edge ${edgeVersion[1]}`;
-    }
-  }
-
-  match = match[2] ? [match[1], match[2]] : [navigator.appName, navigator.appVersion, '-?'];
-  version = userAgent.match(/version\/([.\d]+)/i);
-  if (version !== null) {
-    match.splice(1, 1, version[1]);
-  }
-
-  return match.join(' ');
 }
 
 export function urlB64ToUint8Array(base64String: string) {
@@ -102,21 +32,6 @@ export function urlB64ToUint8Array(base64String: string) {
     outputArray[i] = rawData.charCodeAt(i);
   }
   return outputArray;
-}
-
-export function getDeviceName() {
-  const userAgent = navigator.userAgent;
-  if (userAgent.match(/Android/i)
-    || userAgent.match(/webOS/i)
-    || userAgent.match(/iPhone/i)
-    || userAgent.match(/iPad/i)
-    || userAgent.match(/iPod/i)
-    || userAgent.match(/BlackBerry/i)
-    || userAgent.match(/Windows Phone/i)
-  ) {
-    return 'Phone';
-  }
-  return 'PC';
 }
 
 export function createUUID(pushToken: string) {
@@ -168,7 +83,7 @@ export function getPushToken(pushSubscription: TPushSubscription) {
     return pushSubscription.subscriptionId;
   }
 
-  if (getBrowserType() === 12) {
+  if (<TPlatformFirefox>platformChecker.platform === 12) {
     return pushSubscription.endpoint;
   }
 
@@ -206,7 +121,7 @@ export function getPublicKey(pushSubscription: TPushSubscription) {
 
 export function getPushwooshUrl(applicationCode: string, pushwooshApiUrl?: string) {
   let subDomain = 'cp';
-  if (!isSafariBrowser() && applicationCode && !~applicationCode.indexOf('.')) {
+  if (!platformChecker.isSafari && applicationCode && !~applicationCode.indexOf('.')) {
     subDomain = `${applicationCode}.api`;
   }
   const url = `https://${pushwooshApiUrl || __API_URL__ || subDomain + '.pushwoosh.com'}/json/1.3/`;
@@ -244,18 +159,12 @@ export function patchConsole() {
 }
 
 export function patchPromise() {
-  const global = getGlobal();
-  if (!canUsePromise() && isSupportSDK()) {
-    global.Promise = () => ({
+  if (!platformChecker.isAvailablePromise && platformChecker.isAvailableNotifications) {
+    (window as any).Promise = () => ({
       then: () => {},
       catch: () => {}
     });
   }
-}
-
-export function canUsePromise() {
-  const global = getGlobal();
-  return 'Promise' in global;
 }
 
 export function clearLocationHash() {
@@ -278,7 +187,7 @@ export function prepareDuration(duration: any) {
 
 export function validateParams(params: any) {
   const {...result} = params;
-  if (result.userId && (result.userId === 'user_id' || !!result.userId === false)) {
+  if (result.userId && (result.userId === 'user_id' || !!result.userId)) {
     delete result.userId;
   }
   return result;

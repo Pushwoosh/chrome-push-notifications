@@ -68,6 +68,13 @@ export default class PushwooshNotification {
     this._changedMess.campaignCode = campaignCode;
   }
 
+  get badge() {
+    return this._changedMess.badge;
+  }
+  set badge(badge) {
+    this._changedMess.badge = badge;
+  }
+
   async show() {
     if (!this._canceled) {
       const code = `notificationCode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
@@ -97,7 +104,8 @@ export default class PushwooshNotification {
           campaignCode: this.campaignCode
         },
         actions: buttons,
-        image
+        image,
+        badge: this.badge
       };
       await self.registration.showNotification(this.title, notificationOptions);
 
