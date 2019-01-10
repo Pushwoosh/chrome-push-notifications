@@ -4,10 +4,9 @@ import {
   KEY_FAKE_PUSH_TOKEN,
   KEY_FCM_SUBSCRIPTION,
   KEY_INTERNAL_EVENTS,
-  DEFAULT_NOTIFICATION_DURATION,
-  MAX_NOTIFICATION_DURATION
 } from './constants';
 import platformChecker from './modules/PlatformChecker';
+
 
 type TPushSubscription = PushSubscription | null;
 
@@ -119,22 +118,15 @@ export function getPublicKey(pushSubscription: TPushSubscription) {
   return getSubsKey(pushSubscription, 'p256dh');
 }
 
-export function getPushwooshUrl(applicationCode: string, pushwooshApiUrl?: string) {
-  let subDomain = 'cp';
-  if (!platformChecker.isSafari && applicationCode && !~applicationCode.indexOf('.')) {
-    subDomain = `${applicationCode}.api`;
-  }
-  const url = `https://${pushwooshApiUrl || __API_URL__ || subDomain + '.pushwoosh.com'}/json/1.3/`;
+export function getPushwooshUrl(applicationCode: string) {
+  const url = applicationCode && !~applicationCode.indexOf('.')
+    ? `https://${applicationCode}.api.pushwoosh.com/json/1.3/`  // priority for caching
+    : 'https://cp.pushwoosh.com/json/1.3/';
 
-  return new Promise<any>(resolve => {
-    keyValue.get(KEY_API_BASE_URL)
-      .then((base_url = null) => {
-        resolve(base_url || url);
-      })
-      .catch(() => {
-        resolve(url);
-      });
-  });
+  // get specify base url for dedicated servers
+  return keyValue.get(KEY_API_BASE_URL)
+    .then((base_url = null) => base_url || url)
+    .catch(() => url);
 }
 
 export function patchConsole() {
@@ -177,13 +169,6 @@ export function clearLocationHash() {
   }
 }
 
-export function prepareDuration(duration: any) {
-  if (isNaN(duration)) {
-    return DEFAULT_NOTIFICATION_DURATION;
-  }
-  duration = Math.round(duration);
-  return Math.min(MAX_NOTIFICATION_DURATION, duration < 0 ? DEFAULT_NOTIFICATION_DURATION : duration);
-}
 
 export function validateParams(params: any) {
   const {...result} = params;

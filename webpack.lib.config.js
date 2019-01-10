@@ -5,11 +5,8 @@ const CleanWebpackPlugin = require('clean-webpack-plugin');
 const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
 
-const apiUrlValue = process.env.API_URL || '';
-
 const defines = {
   __VERSION__: JSON.stringify(require('./package.json').version),
-  __API_URL__: JSON.stringify(apiUrlValue)
 };
 
 function copyPublicTypes() {

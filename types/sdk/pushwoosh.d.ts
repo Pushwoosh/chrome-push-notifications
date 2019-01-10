@@ -1,4 +1,4 @@
-type PushwooshApiResponce = {
+type PushwooshApiResponse = {
   status_code: number,
   status_message: string,
   response?: any
@@ -139,10 +139,11 @@ interface INotificationOptions extends ServiceWorkerNotificationOptions {
   duration: number,
   openUrl: string,
   url?: string,
+  inboxId: string,
 
   image?: string,
   code?: string,
-  buttons?: TNotificationButton[],
+  buttons?: INotificationButton[],
   customData?: {[key: string]: any},
   campaignCode?: string
 }
@@ -163,10 +164,6 @@ interface Window {
 interface IPWBroadcastClientsParams {
   type: string;
   payload: any;
-}
-
-interface IEevetTargetWithResult extends EventTarget {
-  result: IDBDatabase;
 }
 
 type TWriteType = 'error' | 'apirequest' | 'info';
@@ -201,12 +198,6 @@ type TWorkerSafariDriverParams = {
   pushwooshApiUrl?: string
 };
 
-type TNotificationButton = {
-  title: string,
-  action: string,
-  url: string
-};
-
 type TServiceWorkerClientExtended = ServiceWorkerClient & {
   focus: () => void
 };
@@ -217,10 +208,19 @@ type PWInput = PushOnReadyCallback | PushInitCallback | PushEventCallback;
 type PushOnReadyCallback = HandlerFn;
 type PushInitCallback = ['init', IInitParams];
 type PushEventCallback = [PWEvent, HandlerFn];
-type PWEvent = 'onReady' | 'onSubscribe' | 'onUnsubscribe' | 'onRegister' | 'onSWInitError'
-  | 'onPermissionPrompt' | 'onPermissionDenied' | 'onPermissionGranted'
-  | 'onNotificationClick' | 'onPushDelivery' | 'onNotificationClose'
-  | 'onChangeCommunicationEnabled';
+type PWEvent = 'onReady'
+  | 'onSubscribe'
+  | 'onUnsubscribe'
+  | 'onRegister'
+  | 'onSWInitError'
+  | 'onPermissionPrompt'
+  | 'onPermissionDenied'
+  | 'onPermissionGranted'
+  | 'onNotificationClick'
+  | 'onPushDelivery'
+  | 'onNotificationClose'
+  | 'onChangeCommunicationEnabled'
+  | 'onPutNewMessageToInboxStore'
+  | 'onUpdateInboxMessages';
 
 declare const __VERSION__: string;
-declare const __API_URL__: string;

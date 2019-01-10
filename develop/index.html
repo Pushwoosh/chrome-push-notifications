@@ -209,6 +209,16 @@
           console.log('EVENT: onSWInitError', api);
       }]);
 
+      Pushwoosh.push(['onPutNewMessageToInboxStore', function(api, message) {
+        console.log('EVENT: onPutNewMessageToInboxStore', message);
+      }]);
+
+      Pushwoosh.push(['onUpdateInboxMessages', function(api, pwinbox) {
+        pwinbox.loadMessages().then(function(messages) {
+          console.log('EVENT: onUpdateInboxMessages', messages);
+        })
+      }]);
+
       function checkSubscription() {
         Pushwoosh.isSubscribed().then(function (res) {
           toggleNodesVisibility('.subscription-status', res ? 'actionUnsubscribe' : 'actionSubscribe');

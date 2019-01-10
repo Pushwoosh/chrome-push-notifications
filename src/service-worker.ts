@@ -1,26 +1,34 @@
-import {keyValue, message as messagesLog} from './storage';
+import {
+  keyValue,
+  message as messagesLog,
+} from './storage';
 import {
   KEY_WORKER_VERSION,
   KEY_LAST_OPEN_MESSAGE,
   PERIOD_GOAL_EVENT,
-  DEFAULT_NOTIFICATION_TITLE,
-  DEFAULT_NOTIFICATION_IMAGE,
-  DEFAULT_NOTIFICATION_URL,
-  KEY_INIT_PARAMS,
 
   KEY_DELAYED_EVENT,
   EVENT_ON_PUSH_DELIVERY,
   EVENT_ON_NOTIFICATION_CLICK,
-  EVENT_ON_NOTIFICATION_CLOSE
+  EVENT_ON_NOTIFICATION_CLOSE,
+  EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE
 } from './constants';
-import {getVersion, prepareDuration} from './functions';
+import {getVersion} from './functions';
 import Logger from './logger';
 import WorkerPushwooshGlobal from './worker/global';
 import PushwooshNotification from './worker/notification';
+import NotificationPayload from './models/NotificationPayload';
+import InboxMessages from './models/InboxMessages';
+import InboxMessagesPublic from './modules/InboxMessagesPublic';
+
 
 const Pushwoosh = self.Pushwoosh = new WorkerPushwooshGlobal();
 const clickedNotifications: string[] = [];
 
+/**
+ * post message to all Window Clients
+ * @param msg
+ */
 async function broadcastClients(msg: IPWBroadcastClientsParams) {
   const clients = await self.clients.matchAll();
   clients.forEach(client => {
@@ -40,53 +48,66 @@ async function JSONParse(json: any, defaultValue?: any) {
   return json === undefined && defaultValue !== undefined ? defaultValue : json;
 }
 
-async function parsePushEvent(event: PushEvent, initParams: IPWParams): Promise<INotificationOptions> {
-  const payload = await event.data.json();
-  const notificationData = payload.data || payload;
-
-  //XMPP Chrome Sender payload contains buttons as string
-  const buttons = await JSONParse(notificationData.buttons, []);
-  const customData = await JSONParse(notificationData.u, {});
-
-  return {
-    ...notificationData,
-    title: notificationData.header || initParams.defaultNotificationTitle || DEFAULT_NOTIFICATION_TITLE,
-    body: notificationData.body,
-    buttons,
-    customData,
-    icon: notificationData.i || initParams.defaultNotificationImage || DEFAULT_NOTIFICATION_IMAGE,
-    image: notificationData.image || '',
-    messageHash: notificationData.p || '',
-    campaignCode: notificationData.pwcid || '',
-    duration: prepareDuration(notificationData.duration),
-    openUrl: notificationData.l || DEFAULT_NOTIFICATION_URL,
-    badge: notificationData.badge
-  };
-}
-
+/**
+ * Receive push handler
+ * @param event
+ */
 async function onPush(event: PushEvent) {
   try {
-    const initParams = await keyValue.get(KEY_INIT_PARAMS);
-    const notificationOptions = await parsePushEvent(event, initParams);
+    // Build payloads from receiving
+    const payload = await event.data.json();
+    const notificationPayload = new NotificationPayload(payload);
+    const notificationOptions = await notificationPayload.getNotificationOptionsPayload();
+    const notificationShowOptions = await notificationPayload.getShowNotificationOptions();
+    const messageHash = notificationPayload.messageHash;
 
-    Logger.setLevel(initParams.logLevel);
     await Logger.write('info', JSON.stringify(notificationOptions), 'onPush');
 
-    const {messageHash} = notificationOptions;
-    const notification = new PushwooshNotification(notificationOptions);
-    const callbacks = Pushwoosh.getListeners('onPush');
+    // Show notification instance
+    const notification = new PushwooshNotification(
+      notificationShowOptions,
+      notificationPayload.duration,
+      notificationPayload.body,
+      await notificationPayload.getTitle()
+    );
 
+    // Call receive push listeners
+    const callbacks = Pushwoosh.getListeners('onPush');
     await callbacks.reduce((pr, fun) => pr.then(() => fun(notification)), Promise.resolve());
 
-    return Promise.all([
-      notification.show(),
-      messageHash && Pushwoosh.initApi().then(() => Pushwoosh.api.messageDeliveryEvent(messageHash)),
-      messagesLog.add({
-        ...notification._forLog(),
-        payload: notificationOptions
+    // Execute receive push actions
+    const onPushActions = [
+      notification.show(),  // Show notification
+      messagesLog.add({  // Put message to messages store
+        payload: payload,
+        parsedPayload: notificationOptions,
+        showOptions: notificationShowOptions
       }),
-      broadcastClients({type: EVENT_ON_PUSH_DELIVERY, payload: notificationOptions})
-    ]);
+      broadcastClients({type: EVENT_ON_PUSH_DELIVERY, payload: notificationOptions})  // post message to window clients
+    ];
+
+    // Send delivery statistic
+    if (messageHash) {
+      onPushActions.push(
+        Pushwoosh.initApi().then(() => Pushwoosh.api.messageDeliveryEvent(messageHash))
+      );
+    }
+
+    // Inbox message actions
+    if (notificationPayload.inboxId !== '') {
+      const inboxMessages = new InboxMessages();
+      const inboxMessagesPublic = new InboxMessagesPublic();
+      const inboxMessagePayload = await notificationPayload.getInboxMessage();
+      onPushActions.push(
+        inboxMessages.putMessage(inboxMessagePayload),  // put message to inboxMessages store
+        broadcastClients({  // post message to window clients
+          type: EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE,
+          payload: inboxMessagesPublic.publicMessageBuilder(inboxMessagePayload)
+        })
+      );
+    }
+
+    return Promise.all(onPushActions);
   }
   catch (e) {
     return messagesLog.add({
@@ -105,7 +126,7 @@ async function parseNotificationEvent(event: NotificationEvent): Promise<INotifi
   let url = '';
 
   if (event.action && Array.isArray(notificationData.buttons)) {
-    const button = notificationData.buttons.find((button: TNotificationButton) => button.action === event.action) || {};
+    const button = notificationData.buttons.find((button: INotificationButton) => button.action === event.action) || {};
     url = button.url;
   } else {
     url = notificationTag.url;
@@ -122,6 +143,7 @@ async function parseNotificationEvent(event: NotificationEvent): Promise<INotifi
     image: notificationData.image,
     code: notificationData.code,
     campaignCode: notificationData.campaignCode,
+    inboxId: notificationData.inboxId,
 
     messageHash: notificationTag.messageHash,
     customData: notificationTag.customData,
@@ -134,10 +156,23 @@ async function parseNotificationEvent(event: NotificationEvent): Promise<INotifi
 
 async function onClick(event: NotificationEvent) {
   const notificationOptions = await parseNotificationEvent(event);
-  const {messageHash, url, code} = notificationOptions;
+  const {
+    messageHash,
+    url,
+    code,
+    inboxId
+  } = notificationOptions;
 
   if (code) {
     clickedNotifications.push(code);
+  }
+
+  if (inboxId !== '') {
+    const inboxMessages = new InboxMessages();
+
+    const message = await inboxMessages.getMessage(inboxId);
+    (<TInboxMessageStatusOpen>message.status) = 3;
+    await inboxMessages.putMessage(message);
   }
 
   event.notification.close();
@@ -145,7 +180,7 @@ async function onClick(event: NotificationEvent) {
   const message = {type: EVENT_ON_NOTIFICATION_CLICK, payload: notificationOptions};
 
   if (url) {
-    await event.waitUntil(self.clients.matchAll({type: "window"})
+    await event.waitUntil(self.clients.matchAll({type: 'window'})
       .then((clientList: Array<TServiceWorkerClientExtended>) => openWindow(clientList, url, message)));
   }
 

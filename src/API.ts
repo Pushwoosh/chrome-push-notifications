@@ -17,12 +17,16 @@ import platformChecker from './modules/PlatformChecker';
 
 import {keyValue} from './storage';
 import Logger, {logAndThrowError} from './logger';
+import doApiXHR from './modules/api/apiCall';
 
 
 export default class PushwooshAPI {
   private timezone: number = -(new Date).getTimezoneOffset() * 60;
+  private readonly doPushwooshApiMethod: TDoPushwooshMethod;
 
-  constructor(private doPushwooshApiMethod: TDoPushwooshMethod, private apiParams: TPWAPIParams, public lastOpenMessage: TPWLastOpenMessage) {}
+  constructor(private apiParams: TPWAPIParams, public lastOpenMessage: TPWLastOpenMessage) {
+    this.doPushwooshApiMethod = doApiXHR;
+  }
 
   // TODO will be deprecated in next minor version
   public get params() {
@@ -34,9 +38,9 @@ export default class PushwooshAPI {
       device_type: this.apiParams.deviceType,
       event: 'API Params',
       attributes: {
-        'app_code': this.apiParams.applicationCode,
-        'device_type': this.apiParams.deviceType,
-        'url': `${this.apiParams.applicationCode} - ${location ? location.href : 'none'}`
+        app_code: this.apiParams.applicationCode,
+        device_type: this.apiParams.deviceType,
+        url: `${this.apiParams.applicationCode} - ${location ? location.href : 'none'}`
       }
     });
 

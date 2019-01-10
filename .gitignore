@@ -12,5 +12,5 @@ package-lock.json
 yarn.lock
 ts-build
 
-.nyc_output
-coverage
+.nyc_output/*
+coverage/*

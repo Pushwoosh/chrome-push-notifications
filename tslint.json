@@ -1,3 +1,11 @@
 {
-  "quotemark": [true, "single", "avoid-escape"]
+    "defaultSeverity": "error",
+    "extends": [
+    ],
+    "jsRules": {},
+    "rules": {
+      "quotemark": [true, "single", "avoid-escape"],
+      "object-literal-key-quotes": [true, "as-needed"]
+    },
+    "rulesDirectory": []
 }

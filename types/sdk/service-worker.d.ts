@@ -64,7 +64,6 @@ interface NotificationAction {
 
 interface ServiceWorkerNotificationOptions {
     actions?: NotificationAction[];
-    badge?: string;
     body?: string;
     dir?: 'auto' | 'ltr' | 'rtl';
     icon?: string;

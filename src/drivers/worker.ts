@@ -24,6 +24,7 @@ import {
 } from '../constants';
 import {keyValue} from '../storage';
 import Logger from '../logger';
+import Params from '../modules/data/Params';
 
 
 declare const Notification: {
@@ -34,7 +35,14 @@ type WindowExtended = Window & {Notification: any}
 
 
 class WorkerDriver implements IPWDriver {
-  constructor(private params: TWorkerDriverParams) {}
+  private readonly paramsModule: Params;
+
+  constructor(
+    private params: TWorkerDriverParams,
+    paramsModule: Params = new Params()
+  ) {
+    this.paramsModule = paramsModule;
+  }
 
   async initWorker() {
     const {serviceWorkerUrl, scope} = this.params;
@@ -56,6 +64,7 @@ class WorkerDriver implements IPWDriver {
     if (!serviceWorkerRegistration) {
       return false;
     }
+    await serviceWorkerRegistration.update();
     let subscription = await serviceWorkerRegistration.pushManager.getSubscription();
     return !!subscription;
   }
@@ -143,7 +152,7 @@ class WorkerDriver implements IPWDriver {
 
     const pushToken = getPushToken(subscription);
 
-    return {
+    const apiParams = {
       pushToken,
       hwid: generateHwid(this.params.applicationCode, pushToken),
       publicKey: getPublicKey(subscription),
@@ -151,6 +160,10 @@ class WorkerDriver implements IPWDriver {
       fcmPushSet: await getFcmKey(subscription, 'pushSet'),
       fcmToken: await getFcmKey(subscription, 'token')
     };
+
+    await this.paramsModule.setHwid(apiParams.hwid);
+
+    return apiParams;
   }
 
   /**

@@ -47,13 +47,19 @@ import {
   EVENT_ON_PUSH_DELIVERY,
   EVENT_ON_NOTIFICATION_CLICK,
   EVENT_ON_NOTIFICATION_CLOSE,
-  EVENT_ON_CHANGE_COMMUNICATION_ENABLED
+  EVENT_ON_CHANGE_COMMUNICATION_ENABLED,
+  EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE,
+  EVENT_ON_UPDATE_INBOX_MESSAGES
 } from './constants';
 import Logger from './logger'
 import WorkerDriver from './drivers/worker';
 import SafariDriver from './drivers/safari';
-import createDoApiXHR from './createDoApiXHR';
 import {keyValue, log as logStorage, message as messageStorage} from './storage';
+
+import Params from './modules/data/Params';
+import InboxMessagesModel from './models/InboxMessages';
+import InboxMessagesPublic from './modules/InboxMessagesPublic';
+
 
 type ChainFunction = (param: any) => Promise<any> | any;
 
@@ -62,18 +68,31 @@ patchPromise();
 class Pushwoosh {
   private platformChecker: PlatformChecker;
   private params: IInitParamsWithDefaults;
+  private paramsModule: Params;
   private _initParams: IInitParams;
   private _ee: EventEmitter = new EventEmitter();
-  private _onPromises: {[key: string]: Promise<ChainFunction>};
   private _isNeedResubscribe: boolean = false;
+  private readonly _onPromises: {[key: string]: Promise<ChainFunction>};
 
   public api: API;
   public driver: IPWDriver;
   public permissionOnInit: string;
   public ready: boolean = false;
   public subscribeWidgetConfig: ISubscribeWidget;
+  private inboxModel: InboxMessagesModel;
 
-  constructor(platformChecker: PlatformChecker = new PlatformChecker()) {
+  // Inbox messages public interface
+  public pwinbox: InboxMessagesPublic;
+
+  constructor(
+    paramsModule: Params = new Params(),
+    inboxMessages: InboxMessagesModel = new InboxMessagesModel(),
+    pwinbox: InboxMessagesPublic = new InboxMessagesPublic(),
+    platformChecker: PlatformChecker = new PlatformChecker()
+  ) {
+    this.pwinbox = pwinbox;
+    this.inboxModel = inboxMessages;
+    this.paramsModule = paramsModule;
     this.platformChecker = platformChecker;
     this._onPromises = {};
 
@@ -183,6 +202,8 @@ class Pushwoosh {
         case EVENT_ON_NOTIFICATION_CLICK:
         case EVENT_ON_NOTIFICATION_CLOSE:
         case EVENT_ON_CHANGE_COMMUNICATION_ENABLED:
+        case EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE:
+        case EVENT_ON_UPDATE_INBOX_MESSAGES:
           if (typeof cmdFunc !== 'function') {
             break;
           }
@@ -215,8 +236,9 @@ class Pushwoosh {
     const {
       scope,
       applicationCode,
-      logLevel = 'error',
-      pushwooshApiUrl
+      pushwooshApiUrl,
+      userId = '',
+      logLevel = 'error'
     } = initParams;
 
     if (!applicationCode) {
@@ -228,8 +250,13 @@ class Pushwoosh {
       this._isNeedResubscribe = true;
     }
 
+    // Set init params in module
+    await this.paramsModule.setAppCode(applicationCode);
+    await this.paramsModule.setApiUrl(pushwooshApiUrl);
+    await this.paramsModule.setUserId(userId);
+
     // Build initial params
-    const pushwooshUrl = await getPushwooshUrl(applicationCode, pushwooshApiUrl);
+    const pushwooshUrl = await this.paramsModule.apiUrl;
     const params = this.params = {
       autoSubscribe: true,
       serviceWorkerUrl: null,
@@ -345,7 +372,6 @@ class Pushwoosh {
       deviceModel: params.tags['Device Model'],
       applicationCode: params.applicationCode,
       language: params.tags.Language,
-      pushwooshApiUrl: params.pushwooshApiUrl
     };
     if (params.userId) {
       apiParams.userId = params.userId
@@ -356,8 +382,7 @@ class Pushwoosh {
       keyValue.extend(KEY_API_PARAMS, driverApiParams)
     ]);
 
-    const func = createDoApiXHR(params.applicationCode, params.pushwooshApiUrl);
-    this.api = new API(func, apiParams, lastOpenMessage);
+    this.api = new API(apiParams, lastOpenMessage);
 
   }
 
@@ -606,6 +631,7 @@ class Pushwoosh {
 
     await this.initApi();
     await this.open();
+    await this.inboxModel.updateMessages(this._ee);
 
     if (this.driver.isNeedUnsubscribe) {
       const needUnsubscribe = await this.driver.isNeedUnsubscribe() && this.isDeviceRegistered();

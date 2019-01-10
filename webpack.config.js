@@ -11,10 +11,8 @@ const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 const config = require('./config').configBuilder;
 const isProduction = process.env.NODE_ENV === 'production';
 
-const apiUrlValue = process.env.API_URL || '';
 const defines = {
-  __VERSION__: JSON.stringify(require('./package.json').version),
-  __API_URL__: JSON.stringify(apiUrlValue)
+  __VERSION__: JSON.stringify(require('./package.json').version)
 };
 
 const devServer = {

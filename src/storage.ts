@@ -1,45 +1,36 @@
-const objectStoreKeyValueName = 'keyValue';
-const objectStoreLogName = 'logs';
-const objectStoreMessagesName = 'messages';
+import version from './modules/storage/version';
+import MigrationExecutor from './modules/storage/migrations/MigrationExecutor';
+import {
+  STORE_NAME_KEY_VALUE,
+  STORE_NAME_MAIN_LOG,
+  STORE_NAME_MESSAGE_LOG
+} from './modules/storage/migrations/constants';
 
 
-function onversionchange(event: any) {
+function onversionchange(database: IDBDatabase, event: Event) {
   console.info('onversionchange', event);
+  database.close();
 }
 
 let databasePromise: Promise<IDBDatabase>;
-function getInstance(): Promise<IDBDatabase> {
+export function getInstance(): Promise<IDBDatabase> {
   if (!databasePromise) {
     databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
-      const request: IDBOpenDBRequest = indexedDB.open('PUSHWOOSH_SDK_STORE', 6);
+      const request: IDBOpenDBRequest = indexedDB.open('PUSHWOOSH_SDK_STORE', version);
       request.onsuccess = (event) => {
-        const database: IDBDatabase = (event.target as IEevetTargetWithResult).result;
-        database.onversionchange = onversionchange;
+        const database: IDBDatabase = (event.target as IIDBOpenEventTargetWithResult).result;
+        database.onversionchange = onversionchange.bind(null, database, reject);
         resolve(database);
       };
 
       request.onerror = () => reject(request.error);
 
       request.onupgradeneeded = (event) => {
-        const database: IDBDatabase = (event.target as IEevetTargetWithResult).result;
-        database.onversionchange = onversionchange;
+        const database: IDBDatabase = (event.target as IIDBOpenEventTargetWithResult).result;
+        database.onversionchange = onversionchange.bind(null, database, reject);
 
-        if (!database.objectStoreNames.contains(objectStoreKeyValueName)) {
-          database.createObjectStore(objectStoreKeyValueName, {keyPath: 'key'});
-        }
-
-        const autoIncrementId = {keyPath: 'id', autoIncrement: true};
-        const uniqueFalse = {unique: false};
-        if (!database.objectStoreNames.contains(objectStoreLogName)) {
-          const logStore = database.createObjectStore(objectStoreLogName, autoIncrementId);
-          logStore.createIndex('environment', 'environment', uniqueFalse);
-          logStore.createIndex('date', 'date', uniqueFalse);
-          logStore.createIndex('type', 'type', uniqueFalse);
-        }
-        if (!database.objectStoreNames.contains(objectStoreMessagesName)) {
-          const messagesStore = database.createObjectStore(objectStoreMessagesName, autoIncrementId);
-          messagesStore.createIndex('date', 'date', uniqueFalse);
-        }
+        const migrationExecutor = new MigrationExecutor(database);
+        migrationExecutor.applyMigrations();
       };
     });
   }
@@ -54,12 +45,12 @@ function getInstanceWithPromise(executor: any): any {
 
 function createKeyValue(name: string) {
   return {
-    get(key: string) {
+    get<K extends string, D>(key: K, defaultValue?: D) {
       return getInstanceWithPromise((database: IDBDatabase, resolve: any, reject: any) => {
         const request = database.transaction(name).objectStore(name).get(key);
         request.onsuccess = () => {
           const {result} = request;
-          resolve(result && result.value);
+          resolve(result && result.value || defaultValue);
         };
         request.onerror = () => {
           reject(request.error);
@@ -93,7 +84,7 @@ function createKeyValue(name: string) {
       await this.set(key, {...oldValues, ...newValues});
     },
 
-    set(key: string, value: any) {
+    set<K, D>(key: K, value: D) {
       return getInstanceWithPromise((database: IDBDatabase, resolve: any, reject: any) => {
         const request = database.transaction([name], 'readwrite').objectStore(name).put({key, value});
         request.onsuccess = () => {
@@ -170,7 +161,7 @@ export abstract class LogBase {
 }
 
 export class LogLog extends LogBase {
-  protected name = objectStoreLogName;
+  protected name = STORE_NAME_MAIN_LOG;
   protected maxItems = 100;
   protected environment = (typeof self !== 'undefined' && (self as ServiceWorkerGlobalScope).registration) ? 'worker' : 'browser';
   add(type: string, message: any, additional?: any) {
@@ -191,7 +182,7 @@ export class LogLog extends LogBase {
 }
 
 export class LogMessage extends LogBase {
-  protected name = objectStoreMessagesName;
+  protected name = STORE_NAME_MESSAGE_LOG;
   protected maxItems = 25;
   add(log: any) {
     return this._add({
@@ -201,6 +192,6 @@ export class LogMessage extends LogBase {
   }
 }
 
-export const keyValue = createKeyValue(objectStoreKeyValueName);
+export const keyValue = createKeyValue(STORE_NAME_KEY_VALUE);
 export const log = new LogLog();
 export const message = new LogMessage();

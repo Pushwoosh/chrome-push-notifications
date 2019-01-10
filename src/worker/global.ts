@@ -5,7 +5,7 @@ import {
   KEY_LAST_OPEN_MESSAGE
 } from '../constants';
 import API from '../API';
-import createDoApiFetch from '../createDoApiFetch';
+
 
 export default class WorkerPushwooshGlobal {
   _listeners: {[key: string]: TPWCanWaitCallback[]} = {};
@@ -38,13 +38,11 @@ export default class WorkerPushwooshGlobal {
       deviceModel: initParams.tags['Device Model'],
       applicationCode: initParams.applicationCode,
       language: initParams.tags.Language,
-      pushwooshApiUrl: initParams.pushwooshApiUrl
     };
     if (initParams.userId) {
       apiParams.userId = initParams.userId
     }
 
-    const func = createDoApiFetch(initParams.applicationCode, initParams.pushwooshApiUrl);
-    this.api = new API(func, apiParams, lastOpenMessage);
+    this.api = new API(apiParams, lastOpenMessage);
   }
 }

@@ -6,7 +6,11 @@ interface Window {
   safari: {
     pushNotification: {
       permission(siteId: string): TSafariPermissionObject;
-      requestPermission(url: string, id: string, params: {application: string}, cb: (permission: TSafariPermissionObject) => void): void;
+      requestPermission(
+        url: string,
+        id: string,
+        params: {application: string},
+        cb: (permission: TSafariPermissionObject) => void): void
     }
   };
 }
