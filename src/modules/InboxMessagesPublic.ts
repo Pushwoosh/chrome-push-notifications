@@ -2,6 +2,7 @@ import {default as InboxMessagesModel} from '../models/InboxMessages';
 import DateModule from './DateModule';
 import ApiClient from './api/ApiClient';
 import PayloadBuilder from './api/PayloadBuilder';
+import Params from './data/Params';
 
 
 export default class InboxMessages implements IInboxMessages {
@@ -9,17 +10,20 @@ export default class InboxMessages implements IInboxMessages {
   private dateModule: DateModule;
   private apiClient: ApiClient;
   private payloadBuilder: PayloadBuilder;
+  private params: Params;
 
   constructor(
     inboxModel: InboxMessagesModel = new InboxMessagesModel(),
     dateModule: DateModule = new DateModule(),
     apiClient: ApiClient = new ApiClient(),
-    payloadBuilder: PayloadBuilder = new PayloadBuilder()
+    payloadBuilder: PayloadBuilder = new PayloadBuilder(),
+    params: Params = new Params(),
   ) {
     this.inboxModel = inboxModel;
     this.dateModule = dateModule;
     this.apiClient = apiClient;
     this.payloadBuilder = payloadBuilder;
+    this.params = params;
 
     this.publicMessageBuilder = this.publicMessageBuilder.bind(this);
   }
@@ -85,15 +89,17 @@ export default class InboxMessages implements IInboxMessages {
    * Build TInboxMessagePublic by TInboxMessage
    * @param message
    */
-  publicMessageBuilder(message: IInboxMessage): IInboxMessagePublic {
+  async publicMessageBuilder(message: IInboxMessage): Promise<IInboxMessagePublic> {
     this.dateModule.date = new Date(parseInt(message.send_date) * 1000);
     this.dateModule.setLocal();
+    const imageUrl = message.image || await this.params.defaultNotificationImage;
+    const title = message.title || await this.params.defaultNotificationTitle;
 
     return {
+      title,
+      imageUrl,
       code: message.inbox_id,
-      title: message.title,
       message: message.text,
-      imageUrl: message.image,
       sendDate: this.dateModule.date.toISOString(),
       type: this.messageTypeFactory(JSON.parse(message.action_params)),
       isRead: <TInboxMessageStatusRead>message.status === 2 || <TInboxMessageStatusOpen>message.status === 3,
@@ -128,14 +134,15 @@ export default class InboxMessages implements IInboxMessages {
   async loadMessages(): Promise<Array<IInboxMessagePublic>> {
     const readMessages = await this.inboxModel.getReadOpenMessages();
     const unreadMessages = await this.inboxModel.getDeliveredMessages();
-    return [...readMessages, ...unreadMessages]
+    const buildMessagePromises = [...readMessages, ...unreadMessages]
       .sort((msgA: IInboxMessage, msgB: IInboxMessage) => {  // sort by send date
-        return parseInt(msgA.send_date, 10) - parseInt(msgB.send_date, 10);
+        return parseInt(msgB.send_date, 10) - parseInt(msgA.send_date, 10);
       })
       .sort((msgA: IInboxMessage, msgB: IInboxMessage) => {  // sort by order
-        return parseInt(msgA.order || '0', 10) - parseInt(msgB.order || '0', 10);
+        return parseInt(msgB.order || '0', 10) - parseInt(msgA.order || '0', 10);
       })
       .map(this.publicMessageBuilder);
+    return Promise.all(buildMessagePromises);
   }
 
   /**

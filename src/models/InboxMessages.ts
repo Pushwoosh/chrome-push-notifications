@@ -109,7 +109,7 @@ export default class InboxMessages {
    */
   async deleteExpiredMessages(): Promise<Array<void>> {
     this.dateModule.date = new Date();
-    const keyRange = IDBKeyRange.upperBound(this.dateModule.getUtcTimestamp().toString());
+    const keyRange = IDBKeyRange.lowerBound(this.dateModule.getUtcTimestamp().toString());
 
     const removalTimeIndex: TInboxMessagesIDBRemovalTimeIndex = 'rt';
     const expiredMessages = await this.storage.getAllByIndex<Array<IInboxMessage>, Array<IInboxMessage>>(this.storeName, removalTimeIndex, keyRange, []);

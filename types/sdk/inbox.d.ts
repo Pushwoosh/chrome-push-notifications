@@ -105,5 +105,5 @@ interface IInboxMessages {
   performActionForMessageWithCode(code: string): Promise<void>;  // call message action. Set open status to messages
   deleteMessagesWithCodes(codes: Array<string>): Promise<void>;  // Set delete status to messages by code
 
-  publicMessageBuilder(message: IInboxMessage): IInboxMessagePublic;  // build public inbox message from base inbox message
+  publicMessageBuilder(message: IInboxMessage): Promise<IInboxMessagePublic>;  // build public inbox message from base inbox message
 }

@@ -106,7 +106,7 @@ export default class NotificationPayload {
       return this.payload.inbox_params.image;
     }
 
-    return this.getIcon();
+    return '';
   }
 
   get rootParams(): {[key: string]: any} {
@@ -183,8 +183,8 @@ export default class NotificationPayload {
 
   async getInboxMessage(): Promise<IInboxMessage> {
     this.dateModule.date = new Date();
-    const sendDate = this.dateModule.getUtcTimestamp().toString();
-    const title = await this.getTitle();
+    const sendDate = this.dateModule.getTimestamp().toString();
+    const title = this.payload.header || '';
     const image = await this.getInboxImage();
     const actionType: TInboxActionUrl = 'URL';
     const status: TInboxMessageStatusDelivered = 1;
@@ -193,7 +193,7 @@ export default class NotificationPayload {
       title,
       image,
       status,
-      order: '0',
+      order: this.dateModule.date.getTime().toString(),
       inbox_id: this.inboxId,
       send_date: sendDate,
       rt: this.inboxRemovalTime,
