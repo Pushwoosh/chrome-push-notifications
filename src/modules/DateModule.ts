@@ -43,4 +43,11 @@ export default class DateModule {
     const newDateTimestamp = this._date.getTime() + days * 24 * 60 * 60 * 1000;
     this._date = new Date(newDateTimestamp);
   }
+
+  /**
+   * Get inbox fake order
+   */
+  getInboxFakeOrder(): string {
+    return (this._date.getTime() * 100 + 25 * 60 * 60 * 1000 * 100).toString()
+  }
 }

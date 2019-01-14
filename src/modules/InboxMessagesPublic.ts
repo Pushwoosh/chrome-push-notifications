@@ -90,10 +90,10 @@ export default class InboxMessages implements IInboxMessages {
    * @param message
    */
   async publicMessageBuilder(message: IInboxMessage): Promise<IInboxMessagePublic> {
-    this.dateModule.date = new Date(parseInt(message.send_date) * 1000);
-    this.dateModule.setLocal();
     const imageUrl = message.image || await this.params.defaultNotificationImage;
     const title = message.title || await this.params.defaultNotificationTitle;
+    this.dateModule.date = new Date(parseInt(message.send_date) * 1000);
+    this.dateModule.setLocal();
 
     return {
       title,

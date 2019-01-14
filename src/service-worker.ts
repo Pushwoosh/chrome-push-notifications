@@ -98,11 +98,13 @@ async function onPush(event: PushEvent) {
       const inboxMessages = new InboxMessages();
       const inboxMessagesPublic = new InboxMessagesPublic();
       const inboxMessagePayload = await notificationPayload.getInboxMessage();
+
+      const payload = await inboxMessagesPublic.publicMessageBuilder(inboxMessagePayload);
       onPushActions.push(
         inboxMessages.putMessage(inboxMessagePayload),  // put message to inboxMessages store
         broadcastClients({  // post message to window clients
           type: EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE,
-          payload: inboxMessagesPublic.publicMessageBuilder(inboxMessagePayload)
+          payload
         })
       );
     }

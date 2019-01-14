@@ -15,7 +15,7 @@ interface INotificationPayload {
   image?: string;  // chrome big image
   buttons?: string;   // button json string. XMPP Chrome Sender payload contains buttons as string
   pw_inbox?: string;  // inbox code
-  inbox_params?: INotificationPayloadInboxParams;  // inbox params
+  inbox_params?: string;  // inbox params json INotificationPayloadInboxParams
   [key: string]: any;  // root params
 }
 

@@ -15,6 +15,7 @@ export default class NotificationPayload {
   params: Params;
   code: string;
   dateModule: DateModule;
+  inboxParams: INotificationPayloadInboxParams;
 
   constructor(
     payload: INotificationPayload | IChromeNotificationPayload,
@@ -30,9 +31,15 @@ export default class NotificationPayload {
       this.payload = <INotificationPayload>payload;
     }
 
+    // Parse inbox params
+    if (this.payload.inbox_params) {
+      this.inboxParams = JSON.parse(this.payload.inbox_params);
+    }
+
     this.params = params;
     this.code = `notificationCode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
     this.dateModule = dateModule;
+
   }
 
   async getIcon(): Promise<string> {
@@ -92,18 +99,18 @@ export default class NotificationPayload {
   }
 
   get inboxRemovalTime(): string {
-    if (this.payload.inbox_params && this.payload.inbox_params.rt) {
-      return this.payload.inbox_params.rt;
+    if (this.inboxParams && this.inboxParams.rt) {
+      return this.inboxParams.rt;
     }
 
     this.dateModule.date = new Date();
-    this.dateModule.addDays(14);  // add two weeks
+    this.dateModule.addDays(1);  // one day removal time
     return this.dateModule.getUtcTimestamp().toString();
   }
 
   async getInboxImage(): Promise<string> {
-    if (this.payload.inbox_params && this.payload.inbox_params.image) {
-      return this.payload.inbox_params.image;
+    if (this.inboxParams && this.inboxParams.image) {
+      return this.inboxParams.image;
     }
 
     return '';
@@ -193,7 +200,7 @@ export default class NotificationPayload {
       title,
       image,
       status,
-      order: this.dateModule.date.getTime().toString(),
+      order: this.dateModule.getInboxFakeOrder(),
       inbox_id: this.inboxId,
       send_date: sendDate,
       rt: this.inboxRemovalTime,
