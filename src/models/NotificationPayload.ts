@@ -5,6 +5,7 @@ import {
 } from '../constants';
 import Params from '../modules/data/Params';
 import DateModule from '../modules/DateModule';
+import {parseSerializedNotificationParams} from '../functions';
 
 
 /**
@@ -15,7 +16,6 @@ export default class NotificationPayload {
   params: Params;
   code: string;
   dateModule: DateModule;
-  inboxParams: INotificationPayloadInboxParams;
 
   constructor(
     payload: INotificationPayload | IChromeNotificationPayload,
@@ -31,15 +31,9 @@ export default class NotificationPayload {
       this.payload = <INotificationPayload>payload;
     }
 
-    // Parse inbox params
-    if (this.payload.inbox_params) {
-      this.inboxParams = JSON.parse(this.payload.inbox_params);
-    }
-
     this.params = params;
     this.code = `notificationCode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
     this.dateModule = dateModule;
-
   }
 
   async getIcon(): Promise<string> {
@@ -64,13 +58,13 @@ export default class NotificationPayload {
 
   get buttons(): Array<INotificationButton> {
     return this.payload.buttons
-      ? <Array<INotificationButton>>JSON.parse(this.payload.buttons)
+      ? parseSerializedNotificationParams(this.payload.buttons)
       : [];
   }
 
   get customData(): {[key: string]: any} {
     return this.payload.u
-      ? JSON.parse(this.payload.u)
+      ? parseSerializedNotificationParams(this.payload.u)
       : {};
   }
 
@@ -96,6 +90,15 @@ export default class NotificationPayload {
 
   get inboxId(): string {
     return this.payload.pw_inbox || '';
+  }
+
+  get inboxParams(): INotificationPayloadInboxParams {
+    // Parse inbox params
+    if (this.payload.inbox_params) {
+      return parseSerializedNotificationParams(this.payload.inbox_params);
+    }
+
+    return {};
   }
 
   get inboxRemovalTime(): string {

@@ -13,7 +13,7 @@ import {
   EVENT_ON_NOTIFICATION_CLOSE,
   EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE
 } from './constants';
-import {getVersion} from './functions';
+import {getVersion, parseSerializedNotificationParams} from './functions';
 import Logger from './logger';
 import WorkerPushwooshGlobal from './worker/global';
 import PushwooshNotification from './worker/notification';
@@ -34,18 +34,6 @@ async function broadcastClients(msg: IPWBroadcastClientsParams) {
   clients.forEach(client => {
     client.postMessage(msg);
   });
-}
-
-async function JSONParse(json: any, defaultValue?: any) {
-  if (typeof json === 'string') {
-    try {
-      return JSON.parse(json);
-    }
-    catch (e) {
-      await Logger.write('error', e, 'Error occurred during json parsing');
-    }
-  }
-  return json === undefined && defaultValue !== undefined ? defaultValue : json;
 }
 
 /**
@@ -123,7 +111,7 @@ async function onPush(event: PushEvent) {
 async function parseNotificationEvent(event: NotificationEvent): Promise<INotificationOptions> {
   const {notification = {}} = event;
   const {data: notificationData} = notification;
-  const notificationTag = await JSONParse(notification.tag, {});
+  const notificationTag = parseSerializedNotificationParams(notification.tag, {});
 
   let url = '';
 

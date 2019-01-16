@@ -1,6 +1,6 @@
 {
   "name": "web-push-notifications",
-  "version": "3.3.2-next",
+  "version": "3.3.3-next",
   "description": "Pushwoosh web push notifications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",

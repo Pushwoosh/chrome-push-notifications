@@ -18,6 +18,19 @@ export function getVersion() {
   return __VERSION__;
 }
 
+// API bad behavior with demo app notification payload fix
+export function parseSerializedNotificationParams(param: any, defaultValue?: any) {
+  if (typeof param === 'string') {
+    try {
+      return JSON.parse(param);
+    }
+    catch (e) {
+      console.log(e);
+    }
+  }
+  return param === undefined && defaultValue !== undefined ? defaultValue : param;
+}
+
 export function urlB64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - base64String.length % 4) % 4);
   const base64 = (base64String + padding)
