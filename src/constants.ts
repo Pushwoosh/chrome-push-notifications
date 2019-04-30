@@ -77,5 +77,6 @@ export const HWID_EXCLUDES = {
   timezone: true,
   plugins: true,
   adBlock: true,
-  fontsFlash: true
+  fontsFlash: true,
+  enumerateDevices: true
 };
