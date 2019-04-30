@@ -116,19 +116,15 @@ export default class Storage {
   /**
    * https://developer.mozilla.org/en-US/docs/Web/API/IDBObjectStore/getAll
    * @param storeName
-   * @param query
-   * @param defaultValue
    */
-  async getAll<Response, D>(
+  async getAll<Response>(
     storeName: TSdkStoreName,
-    query?: TIDBQueryValue,
-    defaultValue?: D
-  ): Promise<Response | D> {
+  ): Promise<Array<Response>> {
     const db = await this.getDB();
     const store = new Store(db, storeName);
-    const result = await store.getAll<Response, D>(query, defaultValue);
+    const result = await store.getAll<Response>();
     db.close();
-    return result;
+    return result || [];
   }
 
   /**
@@ -143,27 +139,6 @@ export default class Storage {
     const db = await this.getDB();
     const store = new Store(db, storeName);
     const result = await store.count(query);
-    db.close();
-    return result;
-  }
-
-  /**
-   * https://developer.mozilla.org/en-US/docs/Web/API/IDBIndex/getAll
-   * @param storeName
-   * @param indexName
-   * @param value
-   * @param defaultValue
-   */
-  async getAllByIndex<Response, D>(
-    storeName: TSdkStoreName,
-    indexName: string,
-    value: TIDBQueryValue,
-    defaultValue?: D
-  ): Promise<Response | D> {
-    const db = await this.getDB();
-    const store = new Store(db, storeName);
-    store.index = indexName;
-    const result = await store.getAllByIndex<Response, D>(value, defaultValue);
     db.close();
     return result;
   }

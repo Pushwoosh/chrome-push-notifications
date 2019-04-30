@@ -109,12 +109,13 @@ export default class InboxMessages {
    */
   async deleteExpiredMessages(): Promise<Array<void>> {
     this.dateModule.date = new Date();
-    const keyRange = IDBKeyRange.upperBound(this.dateModule.getTimestamp().toString());
-
-    const removalTimeIndex: TInboxMessagesIDBRemovalTimeIndex = 'rt';
-    const expiredMessages = await this.storage.getAllByIndex<Array<IInboxMessage>, Array<IInboxMessage>>(this.storeName, removalTimeIndex, keyRange, []);
-    const deleteCodes = expiredMessages.map(expiredMessage => expiredMessage.inbox_id);
-    return this.deleteMessages(deleteCodes);
+    const upperBound = this.dateModule.getTimestamp().toString();
+    const allMessages = await this.storage
+      .getAll<IInboxMessage>(this.storeName);
+    const codesToDelete = allMessages
+      .filter((msg: IInboxMessage) => msg.rt > upperBound)
+      .map(msg => msg.inbox_id);
+    return this.deleteMessages(codesToDelete);
   }
 
   /**
@@ -129,23 +130,20 @@ export default class InboxMessages {
    * Get all read messages
    */
   async getReadOpenMessages(): Promise<Array<IInboxMessage>> {
-    const [readStatus, openStatus]: TReadInboxMessagesStatusRange = [2, 3];
-    const keyRange = IDBKeyRange.bound(readStatus, openStatus);
-    const statusIndexName: TInboxMessagesIDBStatusIndex = 'status';
-
-    return this.storage
-      .getAllByIndex<Array<IInboxMessage>, Array<IInboxMessage>>(this.storeName, statusIndexName, keyRange, []);
+    const allMessages = await this.storage
+      .getAll<IInboxMessage>(this.storeName);
+    return allMessages
+      .filter((msg: IInboxMessage) => <TInboxMessageStatusRead>msg.status === 2 || <TInboxMessageStatusOpen>msg.status === 3);
   }
 
   /**
    * Get all unread messages
    */
   async getDeliveredMessages(): Promise<Array<IInboxMessage>> {
-    const deliveredStatus: TInboxMessageStatusDelivered = 1;
-    const statusIndexName: TInboxMessagesIDBStatusIndex = 'status';
-
-    return this.storage
-      .getAllByIndex<Array<IInboxMessage>, Array<IInboxMessage>>(this.storeName, statusIndexName, deliveredStatus, []);
+    const allMessages = await this.storage
+      .getAll<IInboxMessage>(this.storeName);
+    return allMessages
+      .filter((msg: IInboxMessage) => <TInboxMessageStatusDelivered>msg.status === 1)
   }
 
   /**

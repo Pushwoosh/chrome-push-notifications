@@ -48,13 +48,32 @@ function createKeyValue(name: string) {
     get<K extends string, D>(key: K, defaultValue?: D) {
       return getInstanceWithPromise((database: IDBDatabase, resolve: any, reject: any) => {
         const request = database.transaction(name).objectStore(name).get(key);
-        request.onsuccess = () => {
-          const {result} = request;
-          resolve(result && result.value || defaultValue);
+
+        /** @TODO
+         * we cant invoke "resolve" or "reject" in onsuccess or onerror because
+         * it leads to bugs in Safari when we try to get permissions for notifications
+         *
+         * Checking status of request in setTimeout fixes this bug
+         */
+        let isComplete = false;
+        let isError = false;
+        let timeout: any;
+
+        const check = () => {
+          clearTimeout(timeout);
+          if (isComplete) {
+            const {result} = request;
+            resolve(result && result.value || defaultValue);
+          } else if (isError) {
+            reject(request.error);
+          } else {
+            timeout = setTimeout(check, 0);
+          }
         };
-        request.onerror = () => {
-          reject(request.error);
-        };
+
+        request.onsuccess = () => isComplete = true;
+        request.onerror = () => isError = true;
+        check();
       });
     },
 
@@ -62,19 +81,38 @@ function createKeyValue(name: string) {
       return getInstanceWithPromise((database: IDBDatabase, resolve: any, reject: any) => {
         const result: {[key: string]: any} = {};
         const cursor = database.transaction(name).objectStore(name).openCursor();
+        let isComplete = false;
+        let isError = false;
+        let timeout: any;
+
+        /** @TODO
+         * we cant invoke "resolve" or "reject" in onsuccess or onerror because
+         * it leads to bugs in Safari when we try to get permissions for notifications
+         *
+         * Checking status of request in setTimeout fixes this bug
+         */
+        const check = () => {
+          clearTimeout(timeout);
+          if (isComplete) {
+            resolve(result);
+          } else if (isError) {
+            reject(cursor.error);
+          } else {
+            timeout = setTimeout(check, 0);
+          }
+        };
+
         cursor.onsuccess = (event) => {
           const cursorResult = (event.target as any).result;
           if (cursorResult) {
             result[cursorResult.key] = cursorResult.value.value;
             cursorResult.continue();
-          }
-          else {
-            resolve(result);
+          } else {
+            isComplete = true;
           }
         };
-        cursor.onerror = () => {
-          reject(cursor.error);
-        };
+        cursor.onerror = () => isError = true;
+        check();
       });
     },
 
@@ -87,12 +125,30 @@ function createKeyValue(name: string) {
     set<K, D>(key: K, value: D) {
       return getInstanceWithPromise((database: IDBDatabase, resolve: any, reject: any) => {
         const request = database.transaction([name], 'readwrite').objectStore(name).put({key, value});
-        request.onsuccess = () => {
-          resolve(key);
+        let isComplete = false;
+        let isError = false;
+        let timeout: any;
+
+        /** @TODO
+         * we cant invoke "resolve" or "reject" in onsuccess or onerror because
+         * it leads to bugs in Safari when we try to get permissions for notifications
+         *
+         * Checking status of request in setTimeout fixes this bug
+         */
+        const check = () => {
+          clearTimeout(timeout);
+          if (isComplete) {
+            resolve(key);
+          } else if (isError) {
+            reject(request.error);
+          } else {
+            timeout = setTimeout(check, 0);
+          }
         };
-        request.onerror = () => {
-          reject(request.error);
-        };
+
+        request.onsuccess = () => isComplete = true;
+        request.onerror = () => isError = true;
+        check();
       });
     }
   };
@@ -146,7 +202,9 @@ export abstract class LogBase {
       cursor.onsuccess = (ev) => {
         const cursorResult = (ev.target as any).result;
         if (cursorResult) {
-          result.push(cursorResult.value);
+          if(cursorResult.value) {
+            result.push(cursorResult.value);
+          }
           cursorResult.continue();
         }
         else {

@@ -1,7 +1,7 @@
+import {sendFatalLogToRemoteServer} from './helpers/logger';
 import EventEmitter from './EventEmitter';
 import API from './API';
 import {
-  getPushwooshUrl,
   getVersion,
   patchPromise,
   clearLocationHash,
@@ -68,18 +68,20 @@ patchPromise();
 class Pushwoosh {
   private platformChecker: PlatformChecker;
   private params: IInitParamsWithDefaults;
-  private paramsModule: Params;
   private _initParams: IInitParams;
   private _ee: EventEmitter = new EventEmitter();
   private _isNeedResubscribe: boolean = false;
-  private readonly _onPromises: {[key: string]: Promise<ChainFunction>};
+  private readonly _onPromises: { [key: string]: Promise<ChainFunction> };
+  private inboxModel: InboxMessagesModel;
 
   public api: API;
   public driver: IPWDriver;
   public permissionOnInit: string;
   public ready: boolean = false;
   public subscribeWidgetConfig: ISubscribeWidget;
-  private inboxModel: InboxMessagesModel;
+  public inboxWidgetConfig: IInboxWidget;
+  public subscribePopupConfig: any; // TODO: !!!
+  public paramsModule: Params;
 
   // Inbox messages public interface
   public pwinbox: InboxMessagesPublic;
@@ -134,8 +136,7 @@ class Pushwoosh {
   onReadyHandler(cmd: HandlerFn) {
     if (this.ready) {
       cmd(this.api);
-    }
-    else {
+    } else {
       this._ee.on(EVENT_ON_READY, (params) => cmd(this.api, params));
     }
   }
@@ -167,8 +168,7 @@ class Pushwoosh {
   public async push(cmd: PWInput) {
     if (typeof cmd === 'function') {
       this.onReadyHandler(cmd);
-    }
-    else if (Array.isArray(cmd)) {
+    } else if (Array.isArray(cmd)) {
       const [cmdName, cmdFunc] = cmd;
       switch (cmdName) {
         case 'init':
@@ -179,12 +179,10 @@ class Pushwoosh {
 
             try {
               await this.init(cmdFunc);
-            }
-            catch (e) {
+            } catch (e) {
               Logger.write('info', 'Pushwoosh init failed', e)
             }
-          }
-          else {
+          } else {
             Logger.write('info', 'This browser does not support pushes');
           }
           break;
@@ -220,8 +218,7 @@ class Pushwoosh {
         default:
           throw new Error('unknown command');
       }
-    }
-    else {
+    } else {
       throw new Error('invalid command');
     }
   }
@@ -254,6 +251,8 @@ class Pushwoosh {
     await this.paramsModule.setAppCode(applicationCode);
     await this.paramsModule.setApiUrl(pushwooshApiUrl);
     await this.paramsModule.setUserId(userId);
+    await this.paramsModule.setDefaultNotificationImage(initParams.defaultNotificationImage || '');
+    await this.paramsModule.setDefaultNotificationTitle(initParams.defaultNotificationTitle || '');
 
     // Build initial params
     const pushwooshUrl = await this.paramsModule.apiUrl;
@@ -278,9 +277,19 @@ class Pushwoosh {
       subscribeWidget: {
         enable: false,
         ...initParams.subscribeWidget,
+      },
+      inboxWidget: {
+        enable: false,
+        ...initParams.inboxWidget,
+      },
+      subscribePopup: {
+        enable: false,
+        ...initParams.subscribePopup,
       }
     };
     this.subscribeWidgetConfig = params.subscribeWidget;
+    this.inboxWidgetConfig = params.inboxWidget;
+    this.subscribePopupConfig = params.subscribePopup;
 
     // Set log level
     const manualDebug = localStorage.getItem(MANUAL_SET_LOGGER_LEVEL);
@@ -300,8 +309,7 @@ class Pushwoosh {
         if (this.driver && this.driver.initWorker) {
           await this.driver.initWorker();
         }
-      }
-      catch (error) {
+      } catch (error) {
         Logger.write('error', error, 'driver initialization failed');
       }
     }
@@ -325,8 +333,7 @@ class Pushwoosh {
             .then(clearLocationHash);
         }
       });
-    }
-    else {
+    } else {
       throw new Error('can\'t initialize safari')
     }
 
@@ -336,8 +343,7 @@ class Pushwoosh {
       if ('serviceWorker' in navigator) {
         navigator.serviceWorker.onmessage = this.onServiceWorkerMessage;
       }
-    }
-    catch (err) {
+    } catch (err) {
       Logger.write('error', err, 'defaultProcess fail');
     }
 
@@ -409,8 +415,7 @@ class Pushwoosh {
       if (!subscribed) {
         await this.onSubscribeEmitter();
       }
-    }
-    catch (error) {
+    } catch (error) {
       Logger.write('error', error, 'subscribe fail');
     }
   }
@@ -424,6 +429,7 @@ class Pushwoosh {
     if (this.platformChecker.isSafari) {
       const force = await this.needForcedOpen();
       await this.open(force);
+      await this.inboxModel.updateMessages();
     }
     await this.register(subscribed);
   }
@@ -450,8 +456,7 @@ class Pushwoosh {
       if (notify) {
         this._ee.emit(EVENT_ON_UNSUBSCRIBE);
       }
-    }
-    catch(e) {
+    } catch (e) {
       Logger.write('error', e, 'Error occurred during the unsubscribe');
     }
   }
@@ -551,8 +556,7 @@ class Pushwoosh {
 
     if (!!isEnabled) {
       return this.api.registerDevice();
-    }
-    else {
+    } else {
       return this.api.unregisterDevice();
     }
   }
@@ -592,15 +596,21 @@ class Pushwoosh {
     const curTime = Date.now();
     const val = await keyValue.get(KEY_LAST_SENT_APP_OPEN);
     const lastSentTime = isNaN(val) ? 0 : Number(val);
+
+    // Safari device not registered
     if (this.platformChecker.isSafari && !apiParams.hwid) {
-      return Promise.resolve();
+      return;
     }
+
     if (force || (curTime - lastSentTime) > PERIOD_SEND_APP_OPEN) {
-      await Promise.all([
-        keyValue.set(KEY_LAST_SENT_APP_OPEN, curTime || Date.now()),
-        this.api.applicationOpen()
-      ]);
+      const hourlyActions = [
+        keyValue.set(KEY_LAST_SENT_APP_OPEN, curTime || Date.now()),  // Set timer
+        this.api.applicationOpen()  // Application open statistic
+      ];
+
+      await Promise.all(hourlyActions);
     }
+
   }
 
   /**
@@ -619,6 +629,32 @@ class Pushwoosh {
     return Promise.resolve(result);
   }
 
+
+  /**
+   * Check is device register in local, but unregister on server
+   * And reregister it if so
+   */
+  private async healthCheck() {
+    try {
+      if (this.isDeviceRegistered()) {
+        await this.api.getTags()
+          .catch(() => {
+            return this.api.registerDevice();
+          });
+      }
+    } catch (error) {
+      const data = await keyValue.getAll();
+
+      await sendFatalLogToRemoteServer({
+        message: 'Error in healthCheck',
+        code: 'FATAL-API-002',
+        error,
+        applicationCode: data['params.applicationCode'],
+        workerVersion: data['WORKER_VERSION']
+      });
+    }
+  }
+
   /**
    * Default process during PW initialization.
    * Init API. Subscription to notifications.
@@ -630,8 +666,13 @@ class Pushwoosh {
     this.permissionOnInit = await this.driver.getPermission();
 
     await this.initApi();
+    await this.healthCheck();
     await this.open();
-    await this.inboxModel.updateMessages(this._ee);
+    const apiParams = await this.api.getParams();
+    if (this.platformChecker.isSafari && apiParams.hwid) {
+      await this.inboxModel.updateMessages(this._ee);
+    }
+
 
     if (this.driver.isNeedUnsubscribe) {
       const needUnsubscribe = await this.driver.isNeedUnsubscribe() && this.isDeviceRegistered();
@@ -676,6 +717,14 @@ class Pushwoosh {
         }
         break;
       case PERMISSION_GRANTED:
+
+        const isSubscribed = await this.isSubscribed();
+
+        // if set autoSubscribe and user allowed send push and he is not subscribed -> resubscribe
+        if (!isSubscribed) {
+          await this.subscribe();
+        }
+
         this._ee.emit(EVENT_ON_PERMISSION_GRANTED);
         const trySubscribe = await keyValue.get(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS); // try subscribe if unsubscribed due to undefined fcm keys PUSH-16049
         // if permission === PERMISSION_GRANTED and device is not registered do subscribe

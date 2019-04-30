@@ -1,3 +1,4 @@
+import {sendFatalLogToRemoteServer} from './helpers/logger';
 import {
   keyValue,
   message as messagesLog,
@@ -6,13 +7,13 @@ import {
   KEY_WORKER_VERSION,
   KEY_LAST_OPEN_MESSAGE,
   PERIOD_GOAL_EVENT,
-
   KEY_DELAYED_EVENT,
   EVENT_ON_PUSH_DELIVERY,
   EVENT_ON_NOTIFICATION_CLICK,
   EVENT_ON_NOTIFICATION_CLOSE,
   EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE
 } from './constants';
+
 import {getVersion, parseSerializedNotificationParams} from './functions';
 import Logger from './logger';
 import WorkerPushwooshGlobal from './worker/global';
@@ -21,37 +22,91 @@ import NotificationPayload from './models/NotificationPayload';
 import InboxMessages from './models/InboxMessages';
 import InboxMessagesPublic from './modules/InboxMessagesPublic';
 
-
 const Pushwoosh = self.Pushwoosh = new WorkerPushwooshGlobal();
 const clickedNotifications: string[] = [];
 
+
+self.addEventListener('install', onInstallEventHandler);
+
+self.addEventListener('activate', onActivateEventHandler);
+
+self.addEventListener('push', onPushEventHandler);
+
+self.addEventListener('notificationclick', onClickNotificationEventHandler);
+
+self.addEventListener('notificationclose', onCloseNotificationEventHandler);
+
+
 /**
- * post message to all Window Clients
- * @param msg
+ * On install SW event handler
+ * Update indexedDB SW version and skip waiting stage
+ * @param event
  */
-async function broadcastClients(msg: IPWBroadcastClientsParams) {
-  const clients = await self.clients.matchAll();
-  clients.forEach(client => {
-    client.postMessage(msg);
-  });
+function onInstallEventHandler(event: ExtendableEvent): void {
+
+  async function onInstall(): Promise<void> {
+    await Promise.all([
+      keyValue.set(KEY_WORKER_VERSION, getVersion()),
+      Logger.write('info', 'install')
+    ]);
+
+    await self.skipWaiting();
+  }
+
+  return event.waitUntil(
+    onInstall()
+      .catch(onInstallFailure)
+  );
 }
 
 /**
- * Receive push handler
+ * On activate SW event handler
+ * Do nothing, only write log
  * @param event
  */
-async function onPush(event: PushEvent) {
-  try {
-    // Build payloads from receiving
+function onActivateEventHandler(event: ExtendableEvent) {
+  async function onActivate(): Promise<void> {
+    await Promise.all([
+      Logger.write('info', 'activate')
+    ]);
+
+    await self.clients.claim()
+  }
+
+  event.waitUntil(
+    onActivate()
+      .catch(onActivateFailure)
+  )
+}
+
+/**
+ * On push SW event handler
+ * @param event
+ */
+function onPushEventHandler(event: PushEvent): void {
+  async function onPush(event: PushEvent): Promise<void> {
+    // wake up SW on all pages
+    await self.clients.claim();
+
+    // get payload
     const payload = await event.data.json();
+
+    // create notification payload
     const notificationPayload = new NotificationPayload(payload);
+
+    // get notification options
     const notificationOptions = await notificationPayload.getNotificationOptionsPayload();
+
+    // get notification show options
     const notificationShowOptions = await notificationPayload.getShowNotificationOptions();
+
+    // get message hash
     const messageHash = notificationPayload.messageHash;
 
+    // logging in indexedDB;
     await Logger.write('info', JSON.stringify(notificationOptions), 'onPush');
 
-    // Show notification instance
+    // show notification instance
     const notification = new PushwooshNotification(
       notificationShowOptions,
       notificationPayload.duration,
@@ -61,6 +116,7 @@ async function onPush(event: PushEvent) {
 
     // Call receive push listeners
     const callbacks = Pushwoosh.getListeners('onPush');
+
     await callbacks.reduce((pr, fun) => pr.then(() => fun(notification)), Promise.resolve());
 
     // Execute receive push actions
@@ -71,7 +127,7 @@ async function onPush(event: PushEvent) {
         parsedPayload: notificationOptions,
         showOptions: notificationShowOptions
       }),
-      broadcastClients({type: EVENT_ON_PUSH_DELIVERY, payload: notificationOptions})  // post message to window clients
+      broadcastClients({type: EVENT_ON_PUSH_DELIVERY, payload: notificationOptions}),  // post message to window clients
     ];
 
     // Send delivery statistic
@@ -97,14 +153,127 @@ async function onPush(event: PushEvent) {
       );
     }
 
-    return Promise.all(onPushActions);
+    await Promise.all(onPushActions)
   }
-  catch (e) {
-    return messagesLog.add({
-      error: `${e}`,
-      stack: e.stack,
-      payload: event.data.text()
-    });
+
+  event.waitUntil(
+    onPush(event)
+      .catch((error) => onPushFailure(error, event))
+  );
+}
+
+/**
+ * On click notification event handler
+ * @param event
+ */
+function onClickNotificationEventHandler(event: NotificationEvent): void {
+
+  async function onClickNotification(event: NotificationEvent) {
+    await self.clients.claim();
+
+    // get notification options
+    const notificationOptions = await parseNotificationEvent(event);
+
+    const {
+      messageHash,
+      url,
+      code,
+      inboxId
+    } = notificationOptions;
+
+    if (code) {
+      clickedNotifications.push(code);
+    }
+
+    if (inboxId !== '') {
+      const inboxMessages = new InboxMessages();
+
+      const message = await inboxMessages.getMessage(inboxId);
+      (<TInboxMessageStatusOpen>message.status) = 3;
+      await inboxMessages.putMessage(message);
+    }
+
+    event.notification.close();
+
+    const message = {type: EVENT_ON_NOTIFICATION_CLICK, payload: notificationOptions};
+
+    if (url) {
+      await event.waitUntil(self.clients.matchAll({type: 'window'})
+        .then((clientList: Array<TServiceWorkerClientExtended>) => openWindow(clientList, url, message)));
+    }
+
+    return Promise.all([
+      Pushwoosh.initApi().then(() => Pushwoosh.api.pushStat(messageHash)),
+      keyValue.set(KEY_LAST_OPEN_MESSAGE, {
+        url,
+        messageHash,
+        expiry: Date.now() + PERIOD_GOAL_EVENT
+      }),
+      broadcastClients(message)
+    ]);
+  }
+
+  event.waitUntil(
+    onClickNotification(event)
+      .catch(onClickNotificationFailure)
+  );
+}
+
+/**
+ * On close notification event handler
+ * @param event
+ */
+function onCloseNotificationEventHandler(event: NotificationEvent) {
+  async function closeNotification(event: NotificationEvent): Promise<void> {
+    await self.clients.claim();
+
+    const notificationOptions = await parseNotificationEvent(event);
+    const {code} = notificationOptions;
+
+    event.notification.close();
+
+    if (!code) {
+      return;
+    }
+
+    const index = clickedNotifications.indexOf(code);
+    if (index >= 0) {
+      clickedNotifications.splice(index, 1);
+    } else {
+      return broadcastClients({type: EVENT_ON_NOTIFICATION_CLOSE, payload: notificationOptions})
+    }
+  }
+
+  event.waitUntil(
+    closeNotification(event)
+      .catch(closeNotificationFailure)
+  )
+}
+
+/**
+ * Post message to all Window Clients
+ * @param msg
+ */
+async function broadcastClients(msg: IPWBroadcastClientsParams) {
+  const clients = await self.clients.matchAll();
+  clients.forEach(client => client.postMessage(msg));
+}
+
+async function openWindow(
+  clientList: Array<TServiceWorkerClientExtended>,
+  url: string,
+  message: { type: string, payload: any }
+) {
+  for (let index = clientList.length - 1; index > -1; --index) {
+    const client = clientList[index];
+    if ((url === client.url || url === '/') && 'focus' in client) {
+      client.focus();
+      return;
+    }
+  }
+  if (self.clients.openWindow) {
+    await keyValue.set(KEY_DELAYED_EVENT, message);
+    return self.clients.openWindow(url);
   }
 }
 
@@ -144,111 +313,72 @@ async function parseNotificationEvent(event: NotificationEvent): Promise<INotifi
   };
 }
 
-async function onClick(event: NotificationEvent) {
-  const notificationOptions = await parseNotificationEvent(event);
-  const {
-    messageHash,
-    url,
-    code,
-    inboxId
-  } = notificationOptions;
+async function onInstallFailure(error: Error | string): Promise<void> {
+  const data = await keyValue.getAll();
 
-  if (code) {
-    clickedNotifications.push(code);
-  }
-
-  if (inboxId !== '') {
-    const inboxMessages = new InboxMessages();
-
-    const message = await inboxMessages.getMessage(inboxId);
-    (<TInboxMessageStatusOpen>message.status) = 3;
-    await inboxMessages.putMessage(message);
-  }
-
-  event.notification.close();
-
-  const message = {type: EVENT_ON_NOTIFICATION_CLICK, payload: notificationOptions};
-
-  if (url) {
-    await event.waitUntil(self.clients.matchAll({type: 'window'})
-      .then((clientList: Array<TServiceWorkerClientExtended>) => openWindow(clientList, url, message)));
-  }
-
-  return Promise.all([
-    Pushwoosh.initApi().then(() => Pushwoosh.api.pushStat(messageHash)),
-    keyValue.set(KEY_LAST_OPEN_MESSAGE, {
-      url,
-      messageHash,
-      expiry: Date.now() + PERIOD_GOAL_EVENT
-    }),
-    broadcastClients(message)
-  ]);
+  await sendFatalLogToRemoteServer({
+    message: 'Error in onInstallEventHandler',
+    code: 'FATAL-SW-001',
+    error,
+    applicationCode: data['params.applicationCode'],
+    workerVersion: data['WORKER_VERSION']
+  });
 }
 
-async function openWindow(
-  clientList: Array<TServiceWorkerClientExtended>,
-  url: string,
-  message: {type: string, payload: any}
-) {
-  for (let index = clientList.length - 1; index > -1; --index) {
-    const client = clientList[index];
-    if ((url === client.url || url === '/') && 'focus' in client) {
-      client.focus();
-      return;
-    }
-  }
-  if (self.clients.openWindow) {
-    await keyValue.set(KEY_DELAYED_EVENT, message);
-    return self.clients.openWindow(url);
-  }
+async function onActivateFailure(error: Error | string): Promise<void> {
+  const data = await keyValue.getAll();
+
+  await sendFatalLogToRemoteServer({
+    message: 'Error in onActivateEventHandler',
+    code: 'FATAL-SW-002',
+    error,
+    applicationCode: data['params.applicationCode'],
+    workerVersion: data['WORKER_VERSION']
+  })
 }
 
-async function onClose(event: NotificationEvent) {
-  const notificationOptions = await parseNotificationEvent(event);
-  const {code} = notificationOptions;
+async function onPushFailure(error: Error | string, event: PushEvent): Promise<void> {
+  const data = await keyValue.getAll();
 
-  event.notification.close();
+  await sendFatalLogToRemoteServer({
+    message: 'Error in onPushEventHandler',
+    code: 'FATAL-SW-003',
+    error,
+    applicationCode: data['params.applicationCode'],
+    workerVersion: data['WORKER_VERSION']
+  });
 
-  if (!code) {
-    return;
+  if (!(error instanceof Error)) {
+    error = new Error(error);
   }
 
-  const index = clickedNotifications.indexOf(code);
-  if (index >= 0) {
-    clickedNotifications.splice(index, 1);
-  }
-  else {
-    return broadcastClients({type: EVENT_ON_NOTIFICATION_CLOSE, payload: notificationOptions})
-  }
+  return messagesLog.add({
+    error: `${error}`,
+    stack: error.stack,
+    payload: event.data && event.data.text()
+  });
 }
 
-self.addEventListener('install', (event: ExtendableEvent) => {
-  event.waitUntil(Promise.all([
-    keyValue.set(KEY_WORKER_VERSION, getVersion()),
-    Logger.write('info', 'install')
-  ]).then(() => self.skipWaiting()));
-});
+async function onClickNotificationFailure(error: Error | string): Promise<void> {
+  const data = await keyValue.getAll();
 
-self.addEventListener('activate', function (event: ExtendableEvent) {
-  event.waitUntil(Promise.all([
-    Logger.write('info', 'activate')
-  ]).then(() => self.clients.claim()));
-});
+  await sendFatalLogToRemoteServer({
+    message: 'Error in onNotificationClickEventHandler',
+    code: 'FATAL-SW-004',
+    error,
+    applicationCode: data['params.applicationCode'],
+    workerVersion: data['WORKER_VERSION']
+  })
+}
 
-self.addEventListener('push', (event: PushEvent) => {
-  event.waitUntil(
-    Promise.resolve(self.clients.claim())
-      .then(() => onPush(event).catch(e => console.log(e))),
-  );
-});
+async function closeNotificationFailure(error: Error | string): Promise<void> {
+  const data = await keyValue.getAll();
 
-self.addEventListener('notificationclick', (event: NotificationEvent) => {
-  event.waitUntil(
-    Promise.resolve(self.clients.claim())
-      .then(() => onClick(event).catch(e => console.log(e)))
-  );
-});
-
-self.addEventListener('notificationclose', (event: NotificationEvent) => {
-  event.waitUntil(onClose(event).catch(e => console.log(e)));
-});
+  await sendFatalLogToRemoteServer({
+    message: 'Error in onNotificationCloseEventHandler',
+    code: 'FATAL-SW-005',
+    error,
+    applicationCode: data['params.applicationCode'],
+    workerVersion: data['WORKER_VERSION']
+  });
+}

@@ -41,6 +41,9 @@ export class PlatformChecker {
   }
 
   // Platform flags
+  get isEdge() {
+    return this._isEdge;
+  }
 
   get isSafari() {
     return this._isSafari;
@@ -112,7 +115,7 @@ export class PlatformChecker {
    * Check availability ServiceWorker or safari browser on macos
    */
   canReceiveNotifications(): boolean {
-    return (this._isSafari && this._isMacOS) || this._isAvailableServiceWorker;
+    return (this._isSafari && this._isMacOS) || (this._isAvailableServiceWorker && !this._isEdge);
   }
 
   /**
@@ -135,7 +138,7 @@ export class PlatformChecker {
         break;
 
       case this._isEdge:
-        (<TPlatformEdge>platform) = 15;
+        (<TPlatformEdge>platform) = 150;
         break;
     }
 

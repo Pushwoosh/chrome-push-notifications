@@ -216,6 +216,7 @@ declare namespace PW {
     scope?: string;
     serviceWorkerUrl?: string | null;
     subscribeWidget?: SubscribeWidget;
+    inboxWidget?: InboxWidget;
     tags?: { [key: string]: any };
     userId?: string;
   }
@@ -233,6 +234,7 @@ declare namespace PW {
     safariWebsitePushID?: string;
     scope?: string;
     subscribeWidget?: SubscribeWidget;
+    inboxWidget?: InboxWidget;
     tags?: {
       Language: string;
       'Device Model': string;
@@ -269,6 +271,15 @@ declare namespace PW {
     indent?: string,
     zIndex?: string,
     tooltipText?: TooltipText
+  }
+
+  /**
+   * Sets inbox widget interface parameters.
+   */
+  interface InboxWidget {
+    enable: boolean;
+    triggerId?: string;
+    position?: string;
   }
 
   /**

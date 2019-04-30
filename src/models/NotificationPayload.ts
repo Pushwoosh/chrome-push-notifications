@@ -44,12 +44,16 @@ export default class NotificationPayload {
     return this.payload.header || await this.params.defaultNotificationTitle;
   }
 
+  get silent(): boolean {
+    return Boolean(this.payload.silent);
+  }
+
   get body(): string {
     return this.payload.body;
   }
 
   get messageHash(): string {
-    return this.payload.p;
+    return this.payload.p || '';
   }
 
   get image(): string {
@@ -185,6 +189,7 @@ export default class NotificationPayload {
         campaignCode: this.campaignCode,
         inboxId: this.inboxId
       },
+      silent: this.silent,
       actions: buttons,
       image: this.image,
       buttons  // old notification api artifact

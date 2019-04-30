@@ -1,6 +1,6 @@
 {
   "name": "web-push-notifications",
-  "version": "3.3.3-next",
+  "version": "3.4.7-next",
   "description": "Pushwoosh web push notifications",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -36,6 +36,7 @@
   "homepage": "https://github.com/Pushwoosh/web-push-notifications#readme",
   "devDependencies": {
     "@types/chai": "4.1.6",
+    "@types/fingerprintjs2": "2.0.0",
     "@types/jsdom": "12.2.0",
     "@types/mocha": "5.2.5",
     "@types/node": "10.1.2",
@@ -70,6 +71,10 @@
     "webpack-dev-server": "^3.1.10"
   },
   "dependencies": {
+    "@pushwoosh/logger": "1.0.4",
+    "@pushwoosh/web-push-inbox-widget": "1.0.4",
+    "@pushwoosh/web-push-subscribe-popup": "1.0.1",
+    "fingerprintjs2": "2.0.6",
     "whatwg-fetch": "3.0.0"
   },
   "nyc": {

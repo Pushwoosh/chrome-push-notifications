@@ -1,11 +1,14 @@
 import {keyValue} from './storage';
+import * as Fingerprint2 from 'fingerprintjs2';
 import {
   KEY_API_BASE_URL,
   KEY_FAKE_PUSH_TOKEN,
   KEY_FCM_SUBSCRIPTION,
   KEY_INTERNAL_EVENTS,
+  HWID_EXCLUDES
 } from './constants';
 import platformChecker from './modules/PlatformChecker';
+import {Component} from 'fingerprintjs2';
 
 
 type TPushSubscription = PushSubscription | null;
@@ -61,29 +64,30 @@ export function createUUID(pushToken: string) {
   return s;
 }
 
-export function generateHwid(applicationCode: string, pushToken: string) {
-  pushToken = getFakePushToken() || pushToken || generateFakePushToken();
-  return `${applicationCode}_${createUUID(pushToken)}`;
+export async function generateHwid(applicationCode: string) {
+
+  // for old users who already has generated hwid in localStorage
+  const pushToken = getFakePushToken();
+  if (pushToken) {
+    return `${applicationCode}_${createUUID(pushToken)}`;
+  }
+
+  // for new users who has NOT generated hwid in localStorage
+  return await generateToken();
 }
 
 export function getFakePushToken() {
   return localStorage.getItem(KEY_FAKE_PUSH_TOKEN);
 }
 
-export function generateFakePushToken() {
-  const token = generateToken();
-  localStorage.setItem(KEY_FAKE_PUSH_TOKEN, token);
-  return token;
-}
-
-function generateToken(len?: number) {
+async function generateToken(len?: number) {
   len = len || 32;
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < len; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
+  const components = await Fingerprint2.getPromise({
+    excludes: HWID_EXCLUDES
+  });
+
+  const values = components.map((component: Component) => component.value);
+  return Fingerprint2.x64hash128(values.join(''), len);
 }
 
 export function getPushToken(pushSubscription: TPushSubscription) {
@@ -185,7 +189,7 @@ export function clearLocationHash() {
 
 export function validateParams(params: any) {
   const {...result} = params;
-  if (result.userId && (result.userId === 'user_id' || !!result.userId)) {
+  if (result.userId && result.userId === 'user_id') {
     delete result.userId;
   }
   return result;
@@ -218,4 +222,16 @@ export function sendInternalPostEvent(params: any) {
         xhr.send(JSON.stringify({request}));
       }
     });
+}
+
+export function generateUUID(): string {
+  let d = new Date().getTime();
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function'){
+    d += performance.now();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c: string) {
+    const r = (d + Math.random() * 16) % 16 | 0;
+    d = Math.floor(d / 16);
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
 }

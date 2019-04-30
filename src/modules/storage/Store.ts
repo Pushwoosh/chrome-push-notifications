@@ -68,19 +68,31 @@ export default class Store {
     return this.readRequestPromise<Response, D>(request, defaultValue);
   }
 
-  getAll<Response, D>(query?: TIDBQueryValue, defaultValue?: D) {
-    const request = this.store.getAll(query);
-    return this.readRequestPromise<Response, D>(request, defaultValue);
+  getAll<Response>(): Promise<Array<Response>> {
+    const cursor = this.store.openCursor();
+    const result: Array<Response> = [];
+
+    return new Promise((resolve, reject) => {
+      cursor.onsuccess = (event) => {
+        const target: IIDBGetTransactionEventTargetWithResult = <IIDBGetTransactionEventTargetWithResult>event.target;
+        const cursorResult = target.result;
+        if (cursorResult) {
+          result.push(cursorResult.value);
+          cursorResult.continue();
+        }
+        else {
+          resolve(result);
+        }
+      };
+      cursor.onerror = () => {
+        reject(cursor.error);
+      };
+    });
   }
 
   count(query?: IDBKeyRange): Promise<number> {
     const request = this.store.count(query);
     return this.readRequestPromise<number, number>(request, 0);
-  }
-
-  getAllByIndex<Response, D>(value: TIDBQueryValue, defaultValue?: D): Promise<Response | D> {
-    const request = this._index.getAll(value);
-    return this.readRequestPromise<Response, D>(request, defaultValue);
   }
 
   countByIndex(key?: TIDBQueryValue) {

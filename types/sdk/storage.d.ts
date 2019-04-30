@@ -44,6 +44,7 @@ type TIDBDefaultNotificationTitleKey = 'params.defaultNotificationTitle';
 type TIDBUserIdKey = 'params.userId';
 type TIDBUserIdWasChangedKey = 'params.userIdWasChanged';
 
+type TSubscriptionPopupLastOpen = 'params.subscriptionPopupLastOpen';
 
 type TIDBInboxLastRequestCodeKey = 'inbox.lastRequestCode';
 type TIDBInboxLastRequestTimeKey = 'inbox.lastRequestTime';

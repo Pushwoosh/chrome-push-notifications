@@ -1,5 +1,7 @@
 import {keyValue} from '../../storage';
 import {
+  KEY_API_PARAMS,
+  DEFAULT_API_URL,
   DEFAULT_NOTIFICATION_IMAGE,
   DEFAULT_NOTIFICATION_TITLE
 } from '../../constants';
@@ -16,7 +18,7 @@ export default class Params {
 
   // API url
   get apiUrl(): Promise<string> {
-    return keyValue.get<TIDBApiUrlKey, string>('params.apiUrl', '');
+    return keyValue.get<TIDBApiUrlKey, string>('params.apiUrl', DEFAULT_API_URL);
   }
 
   async setApiUrl(apiUrl?: string): Promise<void> {
@@ -43,7 +45,16 @@ export default class Params {
     return keyValue.get<TIDBHwidKey, string>('params.hwid', '');
   }
 
-  setHwid(hwid: string): Promise<void> {
+  async setHwid(hwid: string): Promise<void> {
+    const {
+      [KEY_API_PARAMS]: apiParams,
+    } = await keyValue.getAll();
+
+    if (apiParams) {
+      apiParams.hwid = hwid;
+      await keyValue.extend(KEY_API_PARAMS, apiParams);
+    }
+
     return keyValue.set<TIDBHwidKey, string>('params.hwid', hwid);
   }
 
@@ -83,7 +94,7 @@ export default class Params {
     return keyValue.get<TIDBUserIdKey, string>('params.userId', '');
   }
 
-  async setUserId(userId: string): Promise<void>  {
+  async setUserId(userId: string): Promise<void> {
     const oldUserId = await this.userId;
     const newUserId = userId === 'user_id' ? '' : userId;  // fix for default value
 
@@ -97,5 +108,13 @@ export default class Params {
 
   async setUserIdWasChanged(userIdWasChanged: boolean) {
     return keyValue.set<TIDBUserIdWasChangedKey, boolean>('params.userIdWasChanged', userIdWasChanged);
+  }
+
+  // Subscribe popup last open time
+  get subscriptionPopupLastOpen(): Promise<number> {
+    return keyValue.get<TSubscriptionPopupLastOpen, number>('params.subscriptionPopupLastOpen', 0);
+  }
+  async setSubscriptionPopupLastOpen(timestampWasChanged: boolean) {
+    return keyValue.set<TSubscriptionPopupLastOpen, boolean>('params.subscriptionPopupLastOpen', timestampWasChanged);
   }
 }

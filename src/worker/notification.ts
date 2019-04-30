@@ -27,7 +27,10 @@ export default class PushwooshNotification {
       return;
     }
 
-    await self.registration.showNotification(this.title, this.showNotificationOptions);
+    const showNotificationOptions = this.showNotificationOptions;
+    if (!showNotificationOptions.silent) {
+      await self.registration.showNotification(this.title, showNotificationOptions);
+    }
 
     if (this.duration > MIN_NOTIFICATION_DURATION) {
       const notifications = await self.registration.getNotifications();

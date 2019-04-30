@@ -5,7 +5,8 @@ interface INotificationPayloadInboxParams {
 
 interface INotificationPayload {
   body: string;  // message text
-  p: string;  // message hash
+  p?: string;  // message hash. Not required for send message on concrete device.
+  silent?: string; // is it silent push notifications (no need to show it to user PUSH-19207)
   header?: string;  // message title
   duration?: string;  // required for chrome/opera
   i?: string;  // icon
@@ -61,5 +62,6 @@ interface IShowNotificationOptions {
   actions: Array<INotificationButton>;
   image: string;
   badge?: string;  // android chrome badge icon,
+  silent?: boolean; // is it silent push notifications (no need to show it to user PUSH-19207)
   [key: string]: any;
 }

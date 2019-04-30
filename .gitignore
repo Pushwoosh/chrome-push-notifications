@@ -14,3 +14,4 @@ ts-build
 
 .nyc_output/*
 coverage/*
+*.pem
