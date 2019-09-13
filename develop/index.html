@@ -71,6 +71,11 @@
         </b>
     </p>
 
+    <div>
+        Facebook widget:
+        <div class="pwasc-container"></div>
+    </div>
+
     <p>Params:</p>
     <table id="deviceParams" border="1" cellpadding="5" cellspacing="0" bordercolor="lightgrey">
       <tbody></tbody>
@@ -152,10 +157,6 @@
         checkSubscription();
       });
 
-//      Pushwoosh.push(['onReady', function(api) {
-//        console.log('EVENT: onReady alternative', api);
-//      }]);
-
       Pushwoosh.push(['onChangeCommunicationEnabled', function(api, isEnabled) {
         console.log('EVENT: onChangeCommunicationEnabled', isEnabled);
         document.querySelector('#GDPRSetCommunicationEnabled').checked = isEnabled;
@@ -217,6 +218,15 @@
         pwinbox.loadMessages().then(function(messages) {
           console.log('EVENT: onUpdateInboxMessages', messages);
         })
+      }]);
+
+      Pushwoosh.push(['onShowNotificationPermissionDialog', function(api) {
+        console.log('EVENT: onShowNotificationPermissionDialog');
+      }]);
+
+      Pushwoosh.push(['onHideNotificationPermissionDialog', function(api, permission) {
+        console.log('EVENT: onHideNotificationPermissionDialog', permission);
+        checkSubscription();
       }]);
 
       function checkSubscription() {
@@ -352,8 +362,6 @@
 
         Pushwoosh.api.postEvent(event, attributes)
           .then(function() {
-            eventControl.value = '';
-            attributesControl.value = '';
             successNode.innerHTML = 'Data successfully submitted ' + new Date();
           })
           .catch(function(err) {

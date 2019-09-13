@@ -53,3 +53,7 @@ declare module 'fake-indexeddb/lib/FDBKeyRange' {
   interface FDBKeyRange extends IDBKeyRange {}
 }
 
+declare module '*.html' {
+  const value: string;
+  export default value;
+}

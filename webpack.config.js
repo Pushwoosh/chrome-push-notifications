@@ -44,7 +44,7 @@ module.exports = {
     globalObject: 'this'
   },
   resolve: {
-    extensions: ['.ts', '.js', '.json'],
+    extensions: ['.ts', '.js', '.json', '.html'],
     modules: [path.resolve(__dirname, 'src'), 'node_modules']
   },
   module: {
@@ -56,6 +56,11 @@ module.exports = {
       {
         test: /\.css$/,
         use: ['to-string-loader', 'css-loader', 'postcss-loader']
+      },
+      {
+        test: /.*src\/.*\.html$/,
+        exclude: /WebpackTemplates/,
+        use: 'raw-loader'
       }
     ]
   },

@@ -11,6 +11,7 @@ npm-debug.log
 package-lock.json
 yarn.lock
 ts-build
+.DS_Store
 
 .nyc_output/*
 coverage/*

@@ -193,6 +193,14 @@ declare namespace PW {
      * @returns {Promise<void>}
      */
     removeAllDeviceData(): Promise<void>;
+
+    /**
+     * Calls API method checkDevice with code and hwid parameters.
+     * @param {string} code
+     * @param {string} hwid
+     * @returns {Promise<any>}
+     */
+    checkDevice(code: string, hwid: string): Promise<any>;
   }
 
   /**

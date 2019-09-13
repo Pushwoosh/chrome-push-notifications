@@ -50,7 +50,7 @@ pwInstance.push(['init', {
     defaultNotificationImage: 'https://yoursite.com/img/logo-medium.png', // URL to custom custom notification image
     autoSubscribe: false, // or true. If true, prompts a user to subscribe for pushes upon SDK initialization
     subscribeWidget: {
-      enabled: true
+      enable: true
     },
     userId: 'user_id', // optional, set custom user ID
     tags: {

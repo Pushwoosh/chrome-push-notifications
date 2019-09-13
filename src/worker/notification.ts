@@ -32,7 +32,7 @@ export default class PushwooshNotification {
       await self.registration.showNotification(this.title, showNotificationOptions);
     }
 
-    if (this.duration > MIN_NOTIFICATION_DURATION) {
+    if (this.duration >= MIN_NOTIFICATION_DURATION) {
       const notifications = await self.registration.getNotifications();
       const count = Math.floor(this.duration / WAKE_UP_SERVICE_WORKER_INTERVAL);
       this.wakeUpServiceWorker(count, this.body);

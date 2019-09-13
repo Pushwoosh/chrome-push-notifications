@@ -1,4 +1,7 @@
 import {
+  unescape
+} from '../helpers/unescape';
+import {
   DEFAULT_NOTIFICATION_DURATION,
   MAX_NOTIFICATION_DURATION,
   MIN_NOTIFICATION_DURATION
@@ -89,7 +92,7 @@ export default class NotificationPayload {
   }
 
   get link(): string {
-    return this.payload.l || '/';
+    return this.payload.l ? unescape(this.payload.l) : '/';
   }
 
   get inboxId(): string {
@@ -170,8 +173,9 @@ export default class NotificationPayload {
       return button;
     });
 
-    const requireInteraction = this.duration === 0 || this.duration > MIN_NOTIFICATION_DURATION;
+    const requireInteraction = this.duration === 0 || this.duration >= MIN_NOTIFICATION_DURATION;
     return {
+      renotify: true,
       ...this.rootParams,
       body: this.body,
       icon,

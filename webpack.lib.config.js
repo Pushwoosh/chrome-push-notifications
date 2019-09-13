@@ -30,7 +30,7 @@ module.exports = {
     globalObject: 'this'  // service worker self
   },
   resolve: {
-    extensions: ['.ts'],
+    extensions: ['.ts', '.js'],
     modules: ['src', 'node_modules']
   },
   module: {
@@ -42,6 +42,11 @@ module.exports = {
       {
         test: /\.css$/,
         use: [ 'to-string-loader', 'css-loader', 'postcss-loader' ]
+      },
+      {
+        test: /.*src\/.*\.html$/,
+        exclude: /WebpackTemplates/,
+        use: 'raw-loader'
       }
     ]
   },

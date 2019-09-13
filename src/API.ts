@@ -24,11 +24,14 @@ import Logger, {logAndThrowError} from './logger';
 import doApiXHR from './modules/api/apiCall';
 import Params from './modules/data/Params';
 
+import { EventBus } from './modules/EventBus/EventBus';
+
 
 export default class PushwooshAPI {
   private timezone: number = -(new Date).getTimezoneOffset() * 60;
   private readonly doPushwooshApiMethod: TDoPushwooshMethod;
   private readonly paramsModule: Params;
+  private readonly eventBus: EventBus;
 
   constructor(
     private apiParams: TPWAPIParams,
@@ -37,6 +40,7 @@ export default class PushwooshAPI {
   ) {
     this.doPushwooshApiMethod = doApiXHR;
     this.paramsModule = paramsModule;
+    this.eventBus = EventBus.getInstance();
   }
 
   // TODO will be deprecated in next minor version
@@ -67,7 +71,7 @@ export default class PushwooshAPI {
     return {...apiParams, ...initParams};
   }
 
-  async callAPI(methodName: string, methodParams?: any) {
+  async callAPI(methodName: string, methodParams?: any, customUrl?: string) {
     const params: IPWParams = await this.getParams();
 
     // can't call any api methods if device data is removed
@@ -109,7 +113,7 @@ export default class PushwooshAPI {
     return this.doPushwooshApiMethod(methodName, {
       ...methodParams,
       ...mustBeParams
-    })
+    }, customUrl)
       .catch(async (error) => {
         await sendFatalLogToRemoteServer({
           message: 'Error in callAPI',
@@ -230,7 +234,14 @@ export default class PushwooshAPI {
       attributes,
       timestampUTC,
       timestampCurrent
-    });
+    })
+      .then((response) => {
+        if (response && response.code) {
+          this.eventBus.emit<'needShowInApp'>('needShowInApp', {code: response.code});
+        }
+
+        return response;
+      })
   }
 
   async triggerEvent(params: TEvent, dbKey?: string) {
@@ -242,5 +253,22 @@ export default class PushwooshAPI {
     if (dbKey) {
       keyValue.set(dbKey, 1);
     }
+  }
+
+  checkDevice(code: string, hwid: string) {
+    return this.callAPI('checkDevice', {
+      application: code,
+      hwid
+    });
+  }
+
+  pageVisit(params: { title: string, url_path: string, url: string }, url: string) {
+    this.callAPI('pageVisited', params, url);
+  }
+
+  getConfig(features: string[]) {
+    return this.callAPI('getConfig', {
+      features
+    });
   }
 }

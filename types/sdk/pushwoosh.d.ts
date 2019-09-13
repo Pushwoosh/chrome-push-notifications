@@ -39,6 +39,13 @@ interface PushSubscription {
   subscriptionId: string
 }
 
+interface FacebookModuleConfig {
+  pageId: string;
+  containerClass: string;
+  applicationCode: string;
+  userId: string;
+}
+
 interface IPWDriver {
   initWorker?(): Promise<any>;
   getPermission(): Promise<TPWPermission>;
@@ -76,6 +83,25 @@ interface ISubscribeWidget {
 
 interface ISubscribePopup {
   enable: boolean;
+  text?: string;
+  askLaterButtonText?: string;
+  confirmSubscriptionButtonText?: string;
+  delay?: number;
+  retryOffset?: number;
+  overlay?: boolean;
+  position?: string;
+  bgColor?: string;
+  borderColor?: string;
+  boxShadow?: string;
+  textColor?: string;
+  textSize?: string;
+  fontFamily?: string;
+  subscribeBtnBgColor?: string;
+  subscribeBtnTextColor?: string;
+  askLaterBtnBgColor?: string;
+  askLaterBtnTextColor?: string;
+  theme?: 'material' | 'topbar',
+  viewport?: string;
 }
 
 type IWidgetPosition = 'left' | 'right' | 'top' | 'bottom';
@@ -126,6 +152,21 @@ interface IInitParams {
   subscribeWidget?: ISubscribeWidget;
   inboxWidget?: IInboxWidget;
   subscribePopup?: ISubscribePopup;
+  facebook?: {
+    enable?: boolean;
+    pageId?: string;
+    containerClass?: string;
+  };
+  inApps?: {
+    enable?: boolean;
+    modal?: {
+      backgroundColor?: string;
+      closeButtonColor?: string;
+      closeButtonHoverColor?: string;
+      preloaderColor?: string;
+      isShowPreloader?: boolean;
+    }
+  }
 }
 
 interface IInitParamsWithDefaults extends IInitParams {
@@ -233,10 +274,11 @@ type TWorkerSafariDriverParams = {
 };
 
 type TServiceWorkerClientExtended = ServiceWorkerClient & {
-  focus: () => void
+  focus: () => void,
+  focused: boolean
 };
 
-type TDoPushwooshMethod = (type: string, params: any) => Promise<any>;
+type TDoPushwooshMethod = (type: string, params: any, url?: string) => Promise<any>;
 
 type PWInput = PushOnReadyCallback | PushInitCallback | PushEventCallback;
 type PushOnReadyCallback = HandlerFn;
@@ -255,6 +297,8 @@ type PWEvent = 'onReady'
   | 'onNotificationClose'
   | 'onChangeCommunicationEnabled'
   | 'onPutNewMessageToInboxStore'
-  | 'onUpdateInboxMessages';
+  | 'onUpdateInboxMessages'
+  | 'onShowNotificationPermissionDialog'
+  | 'onHideNotificationPermissionDialog';
 
 declare const __VERSION__: string;

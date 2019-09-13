@@ -1,14 +1,11 @@
 import {keyValue} from './storage';
-import * as Fingerprint2 from 'fingerprintjs2';
 import {
   KEY_API_BASE_URL,
   KEY_FAKE_PUSH_TOKEN,
   KEY_FCM_SUBSCRIPTION,
   KEY_INTERNAL_EVENTS,
-  HWID_EXCLUDES
 } from './constants';
 import platformChecker from './modules/PlatformChecker';
-import {Component} from 'fingerprintjs2';
 
 
 type TPushSubscription = PushSubscription | null;
@@ -64,30 +61,29 @@ export function createUUID(pushToken: string) {
   return s;
 }
 
-export async function generateHwid(applicationCode: string) {
-
-  // for old users who already has generated hwid in localStorage
-  const pushToken = getFakePushToken();
-  if (pushToken) {
-    return `${applicationCode}_${createUUID(pushToken)}`;
-  }
-
-  // for new users who has NOT generated hwid in localStorage
-  return await generateToken();
+export function generateHwid(applicationCode: string, pushToken: string) {
+  pushToken = getFakePushToken() || pushToken || generateFakePushToken();
+  return `${applicationCode}_${createUUID(pushToken)}`;
 }
 
 export function getFakePushToken() {
   return localStorage.getItem(KEY_FAKE_PUSH_TOKEN);
 }
 
-async function generateToken(len?: number) {
-  len = len || 32;
-  const components = await Fingerprint2.getPromise({
-    excludes: HWID_EXCLUDES
-  });
+export function generateFakePushToken() {
+  const token = generateToken();
+  localStorage.setItem(KEY_FAKE_PUSH_TOKEN, token);
+  return token;
+}
 
-  const values = components.map((component: Component) => component.value);
-  return Fingerprint2.x64hash128(values.join(''), len);
+function generateToken(len?: number) {
+  len = len || 32;
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < len; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
 }
 
 export function getPushToken(pushSubscription: TPushSubscription) {

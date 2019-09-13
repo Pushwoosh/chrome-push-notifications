@@ -4,13 +4,13 @@ import {KEY_API_BASE_URL} from '../../constants';
 import Params from '../data/Params';
 
 
-export default function doApiCall<M, Req, Res>(methodName: M, request: Req): Promise<Res> {
+export default function doApiCall<M, Req, Res>(methodName: M, request: Req, customUrl?: string): Promise<Res> {
   return new Promise(async (resolve, reject) => {
     const params = new Params();
     const pushwooshUrl = await params.apiUrl;
 
     try {
-      const url = `${pushwooshUrl}${methodName}`;
+      const url = customUrl || `${pushwooshUrl}${methodName}`;
 
       fetch(url, {
         method: 'post',

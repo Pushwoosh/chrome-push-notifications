@@ -5,7 +5,7 @@ import {
   getVersion,
   patchPromise,
   clearLocationHash,
-  validateParams,
+  validateParams
 } from './functions';
 import {PlatformChecker} from './modules/PlatformChecker';
 
@@ -49,16 +49,22 @@ import {
   EVENT_ON_NOTIFICATION_CLOSE,
   EVENT_ON_CHANGE_COMMUNICATION_ENABLED,
   EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE,
-  EVENT_ON_UPDATE_INBOX_MESSAGES
+  EVENT_ON_UPDATE_INBOX_MESSAGES,
+  MANUAL_UNSUBSCRIBE,
+  EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG,
+  EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG
 } from './constants';
 import Logger from './logger'
 import WorkerDriver from './drivers/worker';
 import SafariDriver from './drivers/safari';
+import FacebookModule from './modules/FacebookModule';
+import { InApps } from './modules/InApps/InApps';
 import {keyValue, log as logStorage, message as messageStorage} from './storage';
 
 import Params from './modules/data/Params';
 import InboxMessagesModel from './models/InboxMessages';
 import InboxMessagesPublic from './modules/InboxMessagesPublic';
+import { EventBus } from './modules/EventBus/EventBus';
 
 
 type ChainFunction = (param: any) => Promise<any> | any;
@@ -73,6 +79,7 @@ class Pushwoosh {
   private _isNeedResubscribe: boolean = false;
   private readonly _onPromises: { [key: string]: Promise<ChainFunction> };
   private inboxModel: InboxMessagesModel;
+  private eventBus: EventBus;
 
   public api: API;
   public driver: IPWDriver;
@@ -82,6 +89,7 @@ class Pushwoosh {
   public inboxWidgetConfig: IInboxWidget;
   public subscribePopupConfig: any; // TODO: !!!
   public paramsModule: Params;
+  public InApps: InApps;
 
   // Inbox messages public interface
   public pwinbox: InboxMessagesPublic;
@@ -108,6 +116,12 @@ class Pushwoosh {
 
     // Bindings
     this.onServiceWorkerMessage = this.onServiceWorkerMessage.bind(this);
+
+    this.eventBus = EventBus.getInstance();
+
+    this.eventBus.on('askSubscribe', () => {
+      this.subscribe();
+    });
   }
 
   /**
@@ -172,19 +186,26 @@ class Pushwoosh {
       const [cmdName, cmdFunc] = cmd;
       switch (cmdName) {
         case 'init':
-          if (this.platformChecker.isAvailableNotifications) {
-            if (typeof cmdFunc !== 'object') {
-              break;
-            }
+          if (typeof cmdFunc !== 'object') {
+            break;
+          }
 
+          if (this.platformChecker.isAvailableNotifications) {
             try {
-              await this.init(cmdFunc);
+              this.initFacebook(cmdFunc);
+              await this.init(cmdFunc)
+                .then(() => {
+                  return this.initInApp(cmdFunc);
+                });
             } catch (e) {
               Logger.write('info', 'Pushwoosh init failed', e)
             }
           } else {
+            this.initFacebook(cmdFunc);
             Logger.write('info', 'This browser does not support pushes');
           }
+
+
           break;
         case EVENT_ON_READY:
           if (typeof cmdFunc !== 'function') {
@@ -202,6 +223,8 @@ class Pushwoosh {
         case EVENT_ON_CHANGE_COMMUNICATION_ENABLED:
         case EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE:
         case EVENT_ON_UPDATE_INBOX_MESSAGES:
+        case EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG:
+        case EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG:
           if (typeof cmdFunc !== 'function') {
             break;
           }
@@ -220,6 +243,54 @@ class Pushwoosh {
       }
     } else {
       throw new Error('invalid command');
+    }
+  }
+
+  /**
+   * Method initiates Facebook
+   * @param {IInitParams} initParams
+   * @returns {Promise<void>}
+   */
+
+  private initFacebook(initParams: IInitParams) {
+    const facebook = {
+      enable: false,
+      pageId: '',
+      containerClass: '',
+      ...initParams.facebook
+    };
+
+    if (facebook && facebook.enable) {
+      try {
+        new FacebookModule({
+          pageId: facebook.pageId,
+          containerClass: facebook.containerClass,
+          applicationCode: initParams.applicationCode,
+          userId: initParams.userId || ''
+        });
+      } catch (error) {
+        Logger.write('error', error, 'facebook module initialization failed');
+      }
+    }
+  }
+
+  /**
+   * Method for init InApp module
+   * @param {IInitParams} params
+   * @return {Promise<void>}
+   */
+  private initInApp(params: IInitParams) {
+    const inAppInitParams = {
+      enable: false,
+      ...params.inApps
+    };
+
+    if (inAppInitParams.enable) {
+      try {
+        this.InApps = new InApps(inAppInitParams, this.api);
+      } catch (error) {
+        Logger.write('error', error,'InApp module initialization has been failed')
+      }
     }
   }
 
@@ -341,11 +412,14 @@ class Pushwoosh {
     try {
       await this.defaultProcess();
       if ('serviceWorker' in navigator) {
+        // @ts-ignore
         navigator.serviceWorker.onmessage = this.onServiceWorkerMessage;
       }
     } catch (err) {
       Logger.write('error', err, 'defaultProcess fail');
     }
+
+    localStorage.setItem('pushwoosh-websdk-status', 'init');
 
     // Dispatch "pushwoosh.initialized" event
     const event = new CustomEvent('pushwoosh.initialized', {detail: {pw: this}});
@@ -389,7 +463,6 @@ class Pushwoosh {
     ]);
 
     this.api = new API(apiParams, lastOpenMessage);
-
   }
 
   /**
@@ -404,6 +477,43 @@ class Pushwoosh {
       Logger.write('error', 'Communication is disabled');
       return;
     }
+    try {
+
+      const subscribed = await this.driver.isSubscribed();
+
+      const isManuallyUnsubscribed = await keyValue.get(MANUAL_UNSUBSCRIBE);
+      const isAutoSubscribe = this._initParams.autoSubscribe;
+
+      if (isManuallyUnsubscribed && isAutoSubscribe) {
+        return;
+      }
+
+      await this.driver.askSubscribe(this.isDeviceRegistered());
+
+      // always re-register device, because push credentials(pushToken, fcmToken, fcmPushSet) always updated
+      await this.registerDuringSubscribe();
+
+      if (!subscribed) {
+        await this.onSubscribeEmitter();
+      }
+    } catch (error) {
+      Logger.write('error', error, 'subscribe fail');
+    }
+  }
+
+
+  /**
+   * force subscribe if there was a manual unsubscribe
+   * @returns {Promise<void>}
+   */
+  public async forceSubscribe() {
+    const isCommunicationEnabled = await this.isCommunicationEnabled();
+
+    if (!isCommunicationEnabled) {
+      Logger.write('error', 'Communication is disabled');
+      return;
+    }
+
     try {
       const subscribed = await this.driver.isSubscribed();
 
@@ -634,13 +744,14 @@ class Pushwoosh {
    * Check is device register in local, but unregister on server
    * And reregister it if so
    */
-  private async healthCheck() {
+  private async healthCheck(hwid: string) {
     try {
-      if (this.isDeviceRegistered()) {
-        await this.api.getTags()
-          .catch(() => {
-            return this.api.registerDevice();
-          });
+      const { exist, push_token_exist } = await this.api.checkDevice(this.params.applicationCode, hwid);
+
+      if (exist && push_token_exist) {
+        return;
+      } else {
+        await this.api.registerDevice()
       }
     } catch (error) {
       const data = await keyValue.getAll();
@@ -666,13 +777,27 @@ class Pushwoosh {
     this.permissionOnInit = await this.driver.getPermission();
 
     await this.initApi();
-    await this.healthCheck();
     await this.open();
     const apiParams = await this.api.getParams();
-    if (this.platformChecker.isSafari && apiParams.hwid) {
-      await this.inboxModel.updateMessages(this._ee);
+    const {
+      hwid,
+      applicationCode
+    } = apiParams;
+
+    await this.healthCheck(hwid);
+
+    const config = await this.onGetConfig(['page_visit']);
+
+    if (config && config.response && config.response.features) {
+      if (config.response.features.page_visit && config.response.features.page_visit.enabled) {
+        this.sendStatisticsVisitedPage(config.response.features.page_visit.entrypoint);
+      }
     }
 
+
+    if (!this.platformChecker.isSafari || (this.platformChecker.isSafari && apiParams.hwid)) {
+      await this.inboxModel.updateMessages(this._ee);
+    }
 
     if (this.driver.isNeedUnsubscribe) {
       const needUnsubscribe = await this.driver.isNeedUnsubscribe() && this.isDeviceRegistered();
@@ -710,7 +835,8 @@ class Pushwoosh {
           await this.unsubscribe();
         }
         localStorage.removeItem(KEY_DEVICE_REGISTRATION_STATUS);
-        if (autoSubscribe) {
+
+        if (autoSubscribe && !this.platformChecker.isSafari) {
           await this.subscribe();
         } else {
           this._ee.emit(EVENT_ON_PERMISSION_PROMPT);
@@ -727,8 +853,13 @@ class Pushwoosh {
 
         this._ee.emit(EVENT_ON_PERMISSION_GRANTED);
         const trySubscribe = await keyValue.get(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS); // try subscribe if unsubscribed due to undefined fcm keys PUSH-16049
+
         // if permission === PERMISSION_GRANTED and device is not registered do subscribe
-        if ((!this.platformChecker.isSafari && !this.isDeviceRegistered() && !this.isDeviceUnregistered()) || this._isNeedResubscribe || trySubscribe) {
+        if (
+          (!this.platformChecker.isSafari && !this.isDeviceRegistered() && !this.isDeviceUnregistered())
+          || this._isNeedResubscribe
+          || trySubscribe
+          ) {
           await this.subscribe();
           await keyValue.set(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS, false);
         }
@@ -795,6 +926,45 @@ class Pushwoosh {
     } = await keyValue.getAll();
 
     return {...apiParams, ...initParams};
+  }
+
+  /**
+   * Method returns  true if notifications available.
+   * @returns {boolean}
+   */
+  public  isAvailableNotifications() {
+    return this.platformChecker.isAvailableNotifications;
+  }
+
+  public sendStatisticsVisitedPage(url: string) {
+    const {
+      document: { title },
+      location: { origin, pathname, href }
+    } = window;
+
+    this.api.pageVisit({
+      title,
+      url_path: `${origin}${pathname}`,
+      url: href
+    }, url);
+  }
+
+  private async onGetConfig(features: string[]) {
+    try {
+      const { response } = await this.api.getConfig(features);
+
+      return response;
+    } catch (error) {
+      const data = await keyValue.getAll();
+
+      await sendFatalLogToRemoteServer({
+        message: 'Error in getConfig',
+        code: 'FATAL-API-002',
+        error,
+        applicationCode: data['params.applicationCode'],
+        workerVersion: data['WORKER_VERSION']
+      });
+    }
   }
 }
 

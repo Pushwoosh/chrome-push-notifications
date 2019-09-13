@@ -9,7 +9,8 @@ import {
   EVENT_CLICK_SUBSCRIBE_BUTTON,
 
   KEY_SHOW_SUBSCRIBE_WIDGET,
-  KEY_CLICK_SUBSCRIBE_WIDGET
+  KEY_CLICK_SUBSCRIBE_WIDGET,
+  MANUAL_UNSUBSCRIBE
 } from '../constants';
 
 import platformChecker from '../modules/PlatformChecker';
@@ -20,6 +21,8 @@ import {
 } from './constants';
 import Positioning from './positioning';
 import bellSVG from './bell';
+
+import { keyValue } from '../storage';
 
 
 class SubscribeWidget {
@@ -51,7 +54,7 @@ class SubscribeWidget {
 
     // Render if not subscribed
     this.pw.isSubscribed().then((subscribed: boolean) => {
-      if (!subscribed && !this.pw.isDeviceUnregistered()) {
+      if (!subscribed) {
         this.render();
       }
     });
@@ -149,10 +152,11 @@ class SubscribeWidget {
   private async tooltipTextFactory() {
     const permission = await this.pw.driver.getPermission();
     const {tooltipText} = this.config;
+    const isManuallyUnsubscribed = await keyValue.get(MANUAL_UNSUBSCRIBE);
 
     switch (permission) {
       case PERMISSION_GRANTED:
-        return tooltipText.alreadySubscribed;
+        return isManuallyUnsubscribed ? tooltipText.needSubscribe : tooltipText.alreadySubscribed;
       case PERMISSION_PROMPT:
         return tooltipText.needSubscribe;
       case PERMISSION_DENIED:
@@ -281,9 +285,14 @@ class SubscribeWidget {
    */
   private async clickBell() {
     const permission = await this.pw.driver.getPermission();
+    const isManuallyUnsubscribed = await keyValue.get(MANUAL_UNSUBSCRIBE);
     await this.triggerPwEvent(EVENT_CLICK_SUBSCRIBE_BUTTON, KEY_CLICK_SUBSCRIBE_WIDGET);
     switch (permission) {
       case PERMISSION_GRANTED:
+        if (isManuallyUnsubscribed) {
+          this.pw.forceSubscribe();
+        }
+
         return;
       case PERMISSION_PROMPT:
         this.pw.subscribe();

@@ -1,0 +1,15 @@
+<script type="text/javascript">
+  function InAppPushwoosh () {
+    var self = this;
+
+    self.registerForPushNotifications = function(options) {
+      window.parent.postMessage({
+        name: 'InAppPushwoosh',
+        method: 'askSubscribe',
+        options: options,
+      }, '*');
+    }
+  }
+
+  window.pushwoosh = new InAppPushwoosh();
+</script>

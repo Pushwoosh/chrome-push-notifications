@@ -5,5 +5,6 @@
 /// <reference path="custom.d.ts" />
 /// <reference path="notification.d.ts" />
 /// <reference path="inbox.d.ts" />
+/// <reference path="in-app.d.ts" />
 /// <reference path="storage.d.ts" />
 /// <reference path="modules/platformChecker.d.ts" />

@@ -1,0 +1,50 @@
+<script type="text/javascript">
+  function InAppPushManager() {
+    var self = this;
+    var absoluteURLPattern = new RegExp('^(?:[a-z]+:)?//', 'i');
+
+    self.closeInApp = function (options) {
+      window.parent.postMessage({
+        name: 'InAppPushManager',
+        method: 'closeInApp',
+        options: options,
+      }, '*');
+    };
+
+    self.openNewLink = function (options) {
+      window.parent.postMessage({
+        name: 'InAppPushManager',
+        method: 'openNewLink',
+        options: options,
+      }, '*');
+    };
+
+    window.addEventListener('load', function () {
+      var closeLinks = document.querySelectorAll('a[href="pushwoosh://close"]');
+      var otherLinks = document.querySelectorAll('a:not([href="pushwoosh://close"])');
+
+      for (var i = 0; i < closeLinks.length; i++) {
+        closeLinks[i].addEventListener('click', function (event) {
+          event.preventDefault();
+
+          self.closeInApp();
+        });
+      }
+
+      for (var j = 0; j < otherLinks.length; j++) {
+        var href = otherLinks[j].getAttribute('href');
+
+        if (absoluteURLPattern.test(href)) {
+          otherLinks[j].addEventListener('click', function (event) {
+            event.preventDefault();
+
+            self.openNewLink({ href: event.target.href });
+            self.closeInApp();
+          });
+        }
+      }
+    })
+  }
+
+  window.pushManager = new InAppPushManager();
+</script>

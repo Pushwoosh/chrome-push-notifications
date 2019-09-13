@@ -1,7 +1,9 @@
 import {
   PERMISSION_GRANTED,
   EVENT_ON_PERMISSION_GRANTED,
-  EVENT_ON_PERMISSION_DENIED
+  EVENT_ON_PERMISSION_DENIED,
+  EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG,
+  EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG
 } from '../constants';
 import Params from '../modules/data/Params';
 
@@ -37,11 +39,19 @@ class SafariDriver implements IPWDriver {
       webSitePushID = '',
     } = this.params || {};
     return new Promise((resolve, reject) => {
+
+      // emit event when permission dialog show
+      this.params.eventEmitter.emit(EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG);
+
       safari.pushNotification.requestPermission(
         'https://cp.pushwoosh.com/json/1.3/safari',  // get push package url
         webSitePushID,
         {application: applicationCode},
         (permission) => {
+
+          // emit event when permission dialog hide with permission state
+          this.params.eventEmitter.emit(EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG, permission);
+
           if (permission.permission === PERMISSION_GRANTED) {
             eventEmitter.emit(EVENT_ON_PERMISSION_GRANTED);
             resolve(true);

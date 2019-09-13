@@ -26,4 +26,16 @@ export default class ApiClient {
     );
   }
 
+  /**
+   * Get InApp List
+   * @param {IGetInAppsRequest} options
+   */
+  async getInApps(options: IGetInAppsRequest): Promise<IGetInAppsResponse> {
+    const methodName: TGetInAppsMethod = 'getInApps';
+
+    return apiCall<TGetInAppsMethod, IGetInAppsRequest, IGetInAppsResponse>(
+      methodName,
+      options,
+    );
+  }
 }
