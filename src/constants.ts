@@ -77,3 +77,6 @@ export const EVENT_GDPR_DELETE = 'GDPRDelete';
 
 // Manual unsubscription
 export const MANUAL_UNSUBSCRIBE = 'MANUAL_UNSUBSCRIBE';
+
+// Page visited
+export const PAGE_VISITED_URL = 'PAGE_VISITED_URL';

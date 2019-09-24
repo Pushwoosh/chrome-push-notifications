@@ -43,6 +43,7 @@ type TIDBDefaultNotificationImageKey = 'params.defaultNotificationImage';
 type TIDBDefaultNotificationTitleKey = 'params.defaultNotificationTitle';
 type TIDBUserIdKey = 'params.userId';
 type TIDBUserIdWasChangedKey = 'params.userIdWasChanged';
+type TIDBDeviceType = 'params.deviceType';
 
 type TSubscriptionPopupLastOpen = 'params.subscriptionPopupLastOpen';
 

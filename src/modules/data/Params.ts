@@ -40,6 +40,11 @@ export default class Params {
     return keyValue.set<TIDBAppCodeKey, string>('params.applicationCode', appCode);
   }
 
+  // Device type
+  get deviceType(): Promise<string> {
+    return keyValue.get<TIDBDeviceType, string>('params.deviceType', '');
+  }
+
   // HWID
   get hwid(): Promise<string> {
     return keyValue.get<TIDBHwidKey, string>('params.hwid', '');

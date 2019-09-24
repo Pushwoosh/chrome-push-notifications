@@ -52,7 +52,8 @@ import {
   EVENT_ON_UPDATE_INBOX_MESSAGES,
   MANUAL_UNSUBSCRIBE,
   EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG,
-  EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG
+  EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG,
+  PAGE_VISITED_URL
 } from './constants';
 import Logger from './logger'
 import WorkerDriver from './drivers/worker';
@@ -790,7 +791,8 @@ class Pushwoosh {
 
     if (config && config.response && config.response.features) {
       if (config.response.features.page_visit && config.response.features.page_visit.enabled) {
-        this.sendStatisticsVisitedPage(config.response.features.page_visit.entrypoint);
+        await keyValue.set(PAGE_VISITED_URL, config.response.features.page_visit.entrypoint);
+        this.sendStatisticsVisitedPage();
       }
     }
 
@@ -936,24 +938,26 @@ class Pushwoosh {
     return this.platformChecker.isAvailableNotifications;
   }
 
-  public sendStatisticsVisitedPage(url: string) {
+  public async sendStatisticsVisitedPage() {
     const {
       document: { title },
       location: { origin, pathname, href }
     } = window;
 
+    const requestUrl = await keyValue.get(PAGE_VISITED_URL);
+
     this.api.pageVisit({
       title,
       url_path: `${origin}${pathname}`,
       url: href
-    }, url);
+    }, requestUrl);
   }
 
   private async onGetConfig(features: string[]) {
     try {
-      const { response } = await this.api.getConfig(features);
+      const config = await this.api.getConfig(features);
 
-      return response;
+      return config && config.response;
     } catch (error) {
       const data = await keyValue.getAll();
 
