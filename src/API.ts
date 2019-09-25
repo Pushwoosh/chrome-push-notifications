@@ -5,7 +5,8 @@ import {
   KEY_INIT_PARAMS,
   KEY_API_PARAMS,
   KEY_COMMUNICATION_ENABLED,
-  KEY_DEVICE_DATA_REMOVED
+  KEY_DEVICE_DATA_REMOVED,
+  PAGE_VISITED_URL
 } from './constants';
 
 import {
@@ -262,8 +263,10 @@ export default class PushwooshAPI {
     });
   }
 
-  pageVisit(params: { title: string, url_path: string, url: string }, url: string) {
-    this.callAPI('pageVisited', params, url);
+  async pageVisit(params: { title: string, url_path: string, url: string }) {
+    const requestUrl = await keyValue.get(PAGE_VISITED_URL);
+
+    this.callAPI('pageVisited', params, requestUrl);
   }
 
   getConfig(features: string[]) {

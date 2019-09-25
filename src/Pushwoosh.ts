@@ -944,13 +944,11 @@ class Pushwoosh {
       location: { origin, pathname, href }
     } = window;
 
-    const requestUrl = await keyValue.get(PAGE_VISITED_URL);
-
     this.api.pageVisit({
       title,
       url_path: `${origin}${pathname}`,
       url: href
-    }, requestUrl);
+    });
   }
 
   private async onGetConfig(features: string[]) {
