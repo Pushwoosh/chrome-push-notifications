@@ -12,7 +12,10 @@ package-lock.json
 yarn.lock
 ts-build
 .DS_Store
+develop/channels
 
 .nyc_output/*
 coverage/*
 *.pem
+*.zip
+

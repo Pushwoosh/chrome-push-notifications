@@ -1,0 +1,36 @@
+<script type="text/javascript">
+  function PushwooshSendMessage(message, success, failure) {
+    var code = uuidv4();
+
+    if (success) {
+      window.addEventListener('message', function (event) {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data && data.code === code) {
+            success && success(data);
+          }
+        } catch (error) {
+          failure && failure(error);
+        }
+      });
+    }
+
+    var data = Object.assign(
+      message,
+      {
+        code: code
+      }
+    );
+
+    window.parent.postMessage(JSON.stringify(data), "*");
+
+    function uuidv4() {
+      return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+        var r = (Math.random() * 16) | 0,
+          v = c == "x" ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+      });
+    }
+  }
+</script>

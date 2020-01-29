@@ -53,4 +53,4 @@ export function logAndRejectError(error: string, reject: (e: any) => void) {
   reject(logText);
 }
 
-export default Logger;
+export { Logger };

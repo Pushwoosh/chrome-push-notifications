@@ -1,21 +1,15 @@
 import {sendFatalLogToRemoteServer} from './helpers/logger';
+import {message as messagesLog} from './storage';
 import {
-  keyValue,
-  message as messagesLog,
-} from './storage';
-import {
-  KEY_WORKER_VERSION,
-  KEY_LAST_OPEN_MESSAGE,
   PERIOD_GOAL_EVENT,
-  KEY_DELAYED_EVENT,
   EVENT_ON_PUSH_DELIVERY,
   EVENT_ON_NOTIFICATION_CLICK,
   EVENT_ON_NOTIFICATION_CLOSE,
   EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE
 } from './constants';
 
-import {getVersion, parseSerializedNotificationParams} from './functions';
-import Logger from './logger';
+import {parseSerializedNotificationParams} from './functions';
+import { Logger } from './logger';
 import WorkerPushwooshGlobal from './worker/global';
 import PushwooshNotification from './worker/notification';
 import NotificationPayload from './models/NotificationPayload';
@@ -46,7 +40,7 @@ function onInstallEventHandler(event: ExtendableEvent): void {
 
   async function onInstall(): Promise<void> {
     await Promise.all([
-      keyValue.set(KEY_WORKER_VERSION, getVersion()),
+      Pushwoosh.data.setServiceWorkerVersion(__VERSION__),
       Logger.write('info', 'install')
     ]);
 
@@ -140,8 +134,8 @@ function onPushEventHandler(event: PushEvent): void {
 
     // Inbox message actions
     if (notificationPayload.inboxId !== '') {
-      const inboxMessages = new InboxMessages();
-      const inboxMessagesPublic = new InboxMessagesPublic();
+      const inboxMessages = new InboxMessages(Pushwoosh.data, Pushwoosh.api);
+      const inboxMessagesPublic = new InboxMessagesPublic(Pushwoosh.data, Pushwoosh.api, inboxMessages);
       const inboxMessagePayload = await notificationPayload.getInboxMessage();
 
       const payload = await inboxMessagesPublic.publicMessageBuilder(inboxMessagePayload);
@@ -187,7 +181,7 @@ function onClickNotificationEventHandler(event: NotificationEvent): void {
     }
 
     if (inboxId !== '') {
-      const inboxMessages = new InboxMessages();
+      const inboxMessages = new InboxMessages(Pushwoosh.data, Pushwoosh.api);
 
       const message = await inboxMessages.getMessage(inboxId);
       (<TInboxMessageStatusOpen>message.status) = 3;
@@ -205,7 +199,7 @@ function onClickNotificationEventHandler(event: NotificationEvent): void {
 
     return Promise.all([
       Pushwoosh.initApi().then(() => Pushwoosh.api.pushStat(messageHash)),
-      keyValue.set(KEY_LAST_OPEN_MESSAGE, {
+      Pushwoosh.data.setLastOpenMessage({
         url,
         messageHash,
         expiry: Date.now() + PERIOD_GOAL_EVENT
@@ -281,7 +275,7 @@ async function openWindow(
   }
 
   if (self.clients.openWindow) {
-    await keyValue.set(KEY_DELAYED_EVENT, message);
+    await Pushwoosh.data.setDelayedEvent(message);
     return self.clients.openWindow(url);
   }
 }
@@ -323,38 +317,41 @@ async function parseNotificationEvent(event: NotificationEvent): Promise<INotifi
 }
 
 async function onInstallFailure(error: Error | string): Promise<void> {
-  const data = await keyValue.getAll();
+  const applicationCode = await Pushwoosh.data.getApplicationCode();
+  const workerVersion = await Pushwoosh.data.getServiceWorkerVersion();
 
   await sendFatalLogToRemoteServer({
     message: 'Error in onInstallEventHandler',
     code: 'FATAL-SW-001',
     error,
-    applicationCode: data['params.applicationCode'],
-    workerVersion: data['WORKER_VERSION']
+    applicationCode,
+    workerVersion
   });
 }
 
 async function onActivateFailure(error: Error | string): Promise<void> {
-  const data = await keyValue.getAll();
+  const applicationCode = await Pushwoosh.data.getApplicationCode();
+  const workerVersion = await Pushwoosh.data.getServiceWorkerVersion();
 
   await sendFatalLogToRemoteServer({
     message: 'Error in onActivateEventHandler',
     code: 'FATAL-SW-002',
     error,
-    applicationCode: data['params.applicationCode'],
-    workerVersion: data['WORKER_VERSION']
+    applicationCode,
+    workerVersion
   })
 }
 
 async function onPushFailure(error: Error | string, event: PushEvent): Promise<void> {
-  const data = await keyValue.getAll();
+  const applicationCode = await Pushwoosh.data.getApplicationCode();
+  const workerVersion = await Pushwoosh.data.getServiceWorkerVersion();
 
   await sendFatalLogToRemoteServer({
     message: 'Error in onPushEventHandler',
     code: 'FATAL-SW-003',
     error,
-    applicationCode: data['params.applicationCode'],
-    workerVersion: data['WORKER_VERSION']
+    applicationCode,
+    workerVersion
   });
 
   if (!(error instanceof Error)) {
@@ -369,25 +366,27 @@ async function onPushFailure(error: Error | string, event: PushEvent): Promise<v
 }
 
 async function onClickNotificationFailure(error: Error | string): Promise<void> {
-  const data = await keyValue.getAll();
+  const applicationCode = await Pushwoosh.data.getApplicationCode();
+  const workerVersion = await Pushwoosh.data.getServiceWorkerVersion();
 
   await sendFatalLogToRemoteServer({
     message: 'Error in onNotificationClickEventHandler',
     code: 'FATAL-SW-004',
     error,
-    applicationCode: data['params.applicationCode'],
-    workerVersion: data['WORKER_VERSION']
+    applicationCode,
+    workerVersion
   })
 }
 
 async function closeNotificationFailure(error: Error | string): Promise<void> {
-  const data = await keyValue.getAll();
+  const applicationCode = await Pushwoosh.data.getApplicationCode();
+  const workerVersion = await Pushwoosh.data.getServiceWorkerVersion();
 
   await sendFatalLogToRemoteServer({
     message: 'Error in onNotificationCloseEventHandler',
     code: 'FATAL-SW-005',
     error,
-    applicationCode: data['params.applicationCode'],
-    workerVersion: data['WORKER_VERSION']
+    applicationCode,
+    workerVersion
   });
 }

@@ -1,13 +1,16 @@
-import {keyValue} from '../storage';
-import {
-  KEY_INIT_PARAMS,
-  KEY_API_PARAMS,
-  KEY_LAST_OPEN_MESSAGE
-} from '../constants';
-import API from '../API';
+import { Data } from '../modules/Data/Data';
+import { Api } from '../modules/Api/Api';
 
 
 export default class WorkerPushwooshGlobal {
+  public readonly api: Api;
+  public readonly data: Data;
+
+  constructor() {
+    this.api = new Api();
+    this.data = new Data();
+  }
+
   _listeners: {[key: string]: TPWCanWaitCallback[]} = {};
 
   push(f: ['onPush', TPWCanWaitCallback]) {
@@ -23,26 +26,7 @@ export default class WorkerPushwooshGlobal {
     return this._listeners[eventName] || [];
   }
 
-  api: API;
-
-  async initApi() {
-    const values = await keyValue.getAll();
-    const initParams: IInitParamsWithDefaults = values[KEY_INIT_PARAMS];
-    const lastOpenMessage: TPWLastOpenMessage = values[KEY_LAST_OPEN_MESSAGE] || {};
-
-    // TODO apiParams will be deprecated in next minor version
-    const driverApiParams: TPWAPIParams = values[KEY_API_PARAMS];
-    const apiParams: TPWAPIParams = {
-      ...driverApiParams,
-      deviceType: initParams.deviceType,
-      deviceModel: initParams.tags['Device Model'],
-      applicationCode: initParams.applicationCode,
-      language: initParams.tags.Language,
-    };
-    if (initParams.userId) {
-      apiParams.userId = initParams.userId
-    }
-
-    this.api = new API(apiParams, lastOpenMessage);
+  public async initApi() {
+    return Promise.resolve();
   }
 }

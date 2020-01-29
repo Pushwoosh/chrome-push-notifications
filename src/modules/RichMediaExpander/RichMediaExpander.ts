@@ -8,7 +8,7 @@ export class RichMediaExpander {
   }
 
   public uploadExpanders() {
-    const merge = this.expanders.join('\r\n');
+    let merge = this.expanders.join('\r\n');
 
     return this.content.replace('<head>', '<head>' + merge);
   }

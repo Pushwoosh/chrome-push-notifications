@@ -35,13 +35,18 @@ export class DynamicContent {
     // get values from pattern name|modifier|value
     let [ name, modifier, value = '' ] = pattern.split('|');
 
-    const isNotDefaultLanguage = this.language !== this.values.defaultLanguage;
-    const hasReplacedValue = this.values.localization
+    const hasReplacedValueByCurrentLanguage = this.values.localization
       && this.values.localization[this.language]
       && this.values.localization[this.language][name];
 
-    if (isNotDefaultLanguage && hasReplacedValue) {
+    const hasReplacedValueByDefaultLanguage = this.values.localization
+      && this.values.localization[this.values.default_language]
+      && this.values.localization[this.values.default_language][name];
+
+    if (hasReplacedValueByCurrentLanguage) {
       value = this.values.localization[this.language][name];
+    } else if (hasReplacedValueByDefaultLanguage) {
+      value = this.values.localization[this.values.default_language][name];
     }
 
     return this.updateStringByModifier(value, modifier);

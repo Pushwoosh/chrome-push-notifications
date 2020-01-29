@@ -1,6 +1,6 @@
 import * as JSZip from 'jszip';
 
-import logger from '../../logger';
+import { Logger } from '../../logger';
 import { UrlParser } from '../UrlParser/UrlParser';
 
 import { EXTERNAL_RESOURCES_REGEXP_SECOND_GROUP } from './ExternalResources.constants';
@@ -171,7 +171,7 @@ export class ExternalResources {
 
     // check existing file in archive - if have not file for replace return void
     if (!this.jszip.files[path]) {
-      logger.write('error', 'Not found file: "' + path + '" for replace.');
+      Logger.write('error', 'Not found file: "' + path + '" for replace.');
 
       return;
     }

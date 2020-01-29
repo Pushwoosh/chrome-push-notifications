@@ -1,66 +1,126 @@
-import { apiCall } from './apiCall';
-import { TApiClientMethods, IRequestMap, IResponseMap } from './ApiClient.types';
+import { Data } from '../Data/Data';
+import { Logger } from '../../logger';
+
+import { TMethod, IMapRequest, IMapResponse } from './ApiClient.types';
+
 
 export class ApiClient {
-  public async checkDevice(payload: IRequestMap['checkDevice']) {
-    return this.makeRequest('checkDevice', payload);
+  private readonly data: Data;
+  private readonly logger: typeof Logger;
+
+  constructor(
+    data: Data = new Data(),
+    logger: typeof Logger = Logger,
+  ) {
+    this.data = data;
+    this.logger = logger;
   }
 
-  public async registerDevice(payload: IRequestMap['registerDevice']) {
-    return this.makeRequest('registerDevice', payload);
+  public checkDevice(options: IMapRequest['checkDevice']): Promise<IMapResponse['checkDevice']> {
+    return this.createRequest('checkDevice', options);
   }
 
-  public async unregisterDevice(payload: IRequestMap['unregisterDevice']) {
-    return this.makeRequest('unregisterDevice', payload);
+  public getConfig(options: IMapRequest['getConfig']): Promise<IMapResponse['getConfig']> {
+    return this.createRequest('getConfig', options);
   }
 
-  public async setBadge(payload: IRequestMap['setBadge']) {
-    return this.makeRequest('setBadge', payload);
+  public applicationOpen(options: IMapRequest['applicationOpen']): Promise<IMapResponse['applicationOpen']> {
+    return this.createRequest('applicationOpen', options);
   }
 
-  public async pushStat(payload: IRequestMap['pushStat']) {
-    return this.makeRequest('pushStat', payload);
+  public registerDevice(options: IMapRequest['registerDevice']): Promise<IMapResponse['registerDevice']> {
+    return this.createRequest('registerDevice', options);
   }
 
-  public async messageDeliveryEvent(payload: IRequestMap['messageDeliveryEvent']) {
-    return this.makeRequest('messageDeliveryEvent', payload);
+  public unregisterDevice(options: IMapRequest['unregisterDevice']): Promise<IMapResponse['unregisterDevice']> {
+    return this.createRequest('unregisterDevice', options);
   }
 
-  public async setPurchase(payload: IRequestMap['setPurchase']) {
-    return this.makeRequest('setPurchase', payload);
+  public deleteDevice(options: IMapRequest['deleteDevice']): Promise<IMapResponse['deleteDevice']> {
+    return this.createRequest('deleteDevice', options);
   }
 
-  public async setTags(payload: IRequestMap['setTags']) {
-    return this.makeRequest('setTags', payload);
+  public messageDeliveryEvent(options: IMapRequest['messageDeliveryEvent']): Promise<IMapResponse['messageDeliveryEvent']> {
+    return this.createRequest('messageDeliveryEvent', options);
   }
 
-  public async getTags(payload: IRequestMap['getTags']) {
-    return this.makeRequest('getTags', payload);
+  public pushStat(options: IMapRequest['pushStat']): Promise<IMapResponse['pushStat']> {
+    return this.createRequest('pushStat', options);
   }
 
-  public async registerUser(payload: IRequestMap['registerUser']) {
-    return this.makeRequest('registerUser', payload);
+  public setTags(options: IMapRequest['setTags']): Promise<IMapResponse['setTags']> {
+    return this.createRequest('setTags', options);
   }
 
-  public async postEvent(payload: IRequestMap['postEvent']) {
-    return this.makeRequest('postEvent', payload);
+  public getTags(options: IMapRequest['getTags']): Promise<IMapResponse['getTags']> {
+    return this.createRequest('getTags', options);
   }
 
-  public async getNearestZone(payload: IRequestMap['getNearestZone']) {
-    return this.makeRequest('getNearestZone', payload);
+  public registerUser(options: IMapRequest['registerUser']): Promise<IMapResponse['registerUser']> {
+    return this.createRequest('registerUser', options);
   }
 
-  public async getInboxMessages(payload: IRequestMap['getInboxMessages']) {
-    return this.makeRequest('getInboxMessages', payload);
+  public postEvent(options: IMapRequest['postEvent']): Promise<IMapResponse['postEvent']> {
+    return this.createRequest('postEvent', options);
   }
 
-  public async inboxStatus(payload: IRequestMap['inboxStatus']) {
-    return this.makeRequest('inboxStatus', payload);
+  public getInboxMessages(options: IMapRequest['getInboxMessages']): Promise<IMapResponse['getInboxMessages']> {
+    return this.createRequest('getInboxMessages', options);
   }
 
-  private async makeRequest<T extends TApiClientMethods>(methodName: T, payload: IRequestMap[T]): Promise<IResponseMap[T]> {
-    return apiCall<T, IRequestMap[T], IResponseMap[T]>(methodName, payload);
+  public inboxStatus(options: IMapRequest['inboxStatus']): Promise<IMapResponse['inboxStatus']> {
+    return this.createRequest('inboxStatus', options);
+  }
+
+  public pageVisit(options: IMapRequest['pageVisit'], url: string): Promise<IMapResponse['pageVisit']> {
+    return this.createRequest('pageVisit', options, url);
+  }
+
+  public getInApps(options: IMapRequest['getInApps']): Promise<IMapResponse['getInApps']> {
+    return this.createRequest('getInApps', options);
+  }
+
+
+  private async createRequest<T extends TMethod>(methodName: T, request: IMapRequest[T], customUrl?: string): Promise<IMapResponse[T]> {
+    const entrypoint = await this.data.getApiEntrypoint();
+    const url = customUrl || entrypoint + methodName;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'text/plain;charset=UTF-8'
+      },
+      body: JSON.stringify({
+        request
+      })
+    });
+
+    const result = await this.checkResponse(response);
+
+    // reset api entrypoint if need
+    if (result.base_url) {
+      await this.data.setApiEntrypoint(result.base_url);
+    }
+
+    await this.logger.write(
+      'apirequest',
+      `${ methodName } call with arguments: ${ JSON.stringify(request) } to Pushwoosh has been successful. Result: ${ JSON.stringify(result.response) }`
+    );
+
+    return result.response as IMapResponse[T];
+  }
+
+  private async checkResponse(response: Response): Promise<any> {
+    if (response.status !== 200) {
+      throw new Error(`Error code: ${ response.status }. Error text: ${ response.statusText }`);
+    }
+
+    const data = await response.json();
+
+    if (data.status_code !== 200) {
+      throw new Error(`Error code: ${ data.status_code }. Error text: ${ data.status_message }`);
+    }
+
+    return data;
   }
 }
-
-

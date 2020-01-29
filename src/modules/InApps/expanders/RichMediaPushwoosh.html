@@ -1,15 +1,64 @@
 <script type="text/javascript">
-  function InAppPushwoosh () {
+  function PushwooshBridge() {
     var self = this;
 
-    self.registerForPushNotifications = function(options) {
-      window.parent.postMessage({
-        name: 'InAppPushwoosh',
-        method: 'askSubscribe',
-        options: options,
-      }, '*');
-    }
+    self.isWebSDK = true;
+    self.isSafari = navigator.userAgent.toLowerCase().indexOf('safari') !== -1
+      && navigator.userAgent.toLowerCase().indexOf('chrome') === -1;
+
+    self.registerForPushNotifications = function () {
+      PushwooshSendMessage({
+        method: 'subscribe',
+      })
+    };
+
+    self.unregisterForPushNotifications = function () {
+      PushwooshSendMessage({
+        method: 'unsubscribe',
+      });
+    };
+
+    self.getTags = function (onSuccessCallback) {
+      PushwooshSendMessage({
+        method: 'getTags',
+      }, function (result) {
+        onSuccessCallback(result && result.tags);
+      })
+    };
+
+    self.sendTags = function (tags) {
+      PushwooshSendMessage({
+        method: 'setTags',
+        options: {
+          tags: tags
+        },
+      });
+    };
+
+    self.isRegisteredForPushNotifications = function (onSuccessCallback) {
+      PushwooshSendMessage({
+        method: 'checkSubscription',
+      }, function (result) {
+        onSuccessCallback(result.state)
+      });
+    };
+
+    self.isManualUnregisterForPushNotifications = function (onSuccessCallback) {
+      PushwooshSendMessage({
+        method: 'checkManualUnsubscribed',
+      }, function (result) {
+        onSuccessCallback(result.state)
+      });
+    };
+
+    self.getChannels = function (onSuccessCallback) {
+      PushwooshSendMessage({
+        method: 'getChannels',
+      }, function (result) {
+        onSuccessCallback(result.channels)
+      });
+    };
   }
 
-  window.pushwoosh = new InAppPushwoosh();
+  window.pushwoosh = new PushwooshBridge();
 </script>

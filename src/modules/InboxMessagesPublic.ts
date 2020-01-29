@@ -1,29 +1,25 @@
 import {default as InboxMessagesModel} from '../models/InboxMessages';
 import DateModule from './DateModule';
-import ApiClient from './api/ApiClient';
-import PayloadBuilder from './api/PayloadBuilder';
-import Params from './data/Params';
+import { Api } from './Api/Api';
+import { Data } from './Data/Data';
 
 
 export default class InboxMessages implements IInboxMessages {
+  private readonly data: Data;
+  private readonly api: Api;
   private readonly inboxModel: InboxMessagesModel;
   private dateModule: DateModule;
-  private apiClient: ApiClient;
-  private payloadBuilder: PayloadBuilder;
-  private params: Params;
 
   constructor(
-    inboxModel: InboxMessagesModel = new InboxMessagesModel(),
+    data: Data,
+    api: Api,
+    inboxModel: InboxMessagesModel,
     dateModule: DateModule = new DateModule(),
-    apiClient: ApiClient = new ApiClient(),
-    payloadBuilder: PayloadBuilder = new PayloadBuilder(),
-    params: Params = new Params(),
   ) {
+    this.data = data;
+    this.api = api;
     this.inboxModel = inboxModel;
     this.dateModule = dateModule;
-    this.apiClient = apiClient;
-    this.payloadBuilder = payloadBuilder;
-    this.params = params;
 
     this.publicMessageBuilder = this.publicMessageBuilder.bind(this);
   }
@@ -77,8 +73,7 @@ export default class InboxMessages implements IInboxMessages {
       updatedMessages.push(msg);
 
       // Set inbox status to server
-      const inboxStatusPayload = await this.payloadBuilder.inboxStatus(msg.order, msg.status);
-      inboxStatusQueries.push(this.apiClient.inboxStatus(inboxStatusPayload));
+      inboxStatusQueries.push(this.api.inboxStatus(msg.order, msg.status));
     });
 
     await this.inboxModel.putBulkMessages(updatedMessages);
@@ -90,8 +85,8 @@ export default class InboxMessages implements IInboxMessages {
    * @param message
    */
   async publicMessageBuilder(message: IInboxMessage): Promise<IInboxMessagePublic> {
-    const imageUrl = message.image || await this.params.defaultNotificationImage;
-    const title = message.title || await this.params.defaultNotificationTitle;
+    const imageUrl = message.image || await this.data.getDefaultNotificationImage();
+    const title = message.title || await this.data.getDefaultNotificationTitle();
     this.dateModule.date = new Date(parseInt(message.send_date) * 1000);
     this.dateModule.setLocal();
 
@@ -180,8 +175,7 @@ export default class InboxMessages implements IInboxMessages {
     await this.inboxModel.putMessage(message);
 
     // Set inbox status to server
-    const inboxStatusPayload = await this.payloadBuilder.inboxStatus(message.order, message.status);
-    await this.apiClient.inboxStatus(inboxStatusPayload);
+    await this.api.inboxStatus(message.order, message.status);
   }
 
   /**

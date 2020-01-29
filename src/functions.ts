@@ -138,7 +138,7 @@ export function getPushwooshUrl(applicationCode: string) {
 
   // get specify base url for dedicated servers
   return keyValue.get(KEY_API_BASE_URL)
-    .then((base_url = null) => base_url || url)
+    .then((base_url: string | null = null) => base_url || url)
     .catch(() => url);
 }
 

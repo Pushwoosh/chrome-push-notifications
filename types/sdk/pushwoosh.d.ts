@@ -8,7 +8,7 @@ type TPWPermission = 'denied' | 'granted' | 'default';
 
 interface IPWDriverAPIParams {
   hwid: string;
-  pushToken: string;
+  pushToken?: string;
   publicKey?: string;
   authToken?: string;
   fcmToken?: string;
@@ -188,6 +188,7 @@ interface IInitParamsWithDefaults extends IInitParams {
   subscribeWidget: ISubscribeWidget;
   inboxWidget: IInboxWidget;
   subscribePopup: ISubscribePopup;
+  hwid: string;
 }
 
 interface IPWParams extends IInitParamsWithDefaults {
@@ -203,7 +204,7 @@ interface IPWParams extends IInitParamsWithDefaults {
   authToken?: string;
   fcmPushSet?: string;
   fcmToken?: string;
-  hwid?: string;
+  hwid: string;
   publicKey?: string;
   pushToken?: string;
 }

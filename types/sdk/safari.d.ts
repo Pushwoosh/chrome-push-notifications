@@ -1,17 +1,24 @@
-type TSafariPermissionObject = {
-  permission: 'granted' | 'denied' | 'default';
+interface IPushServiceSafariRequestPayload {
+  application: string;
+  hwid: string;
+}
+
+interface IPushServiceSafariInfo {
+  permission: NotificationPermission;
   deviceToken?: string;
-};
+}
+
 interface Window {
   safari: {
     pushNotification: {
-      permission(siteId: string): TSafariPermissionObject;
+      permission(siteId: string): IPushServiceSafariInfo;
       requestPermission(
         url: string,
         id: string,
-        params: {application: string},
-        cb: (permission: TSafariPermissionObject) => void): void
+        payload: IPushServiceSafariRequestPayload,
+        cb: (permission: IPushServiceSafariInfo) => void): void
     }
   };
 }
+
 declare const safari: typeof window.safari;

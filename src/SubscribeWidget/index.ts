@@ -10,7 +10,8 @@ import {
 
   KEY_SHOW_SUBSCRIBE_WIDGET,
   KEY_CLICK_SUBSCRIBE_WIDGET,
-  MANUAL_UNSUBSCRIBE
+  MANUAL_UNSUBSCRIBE,
+  SUBSCRIPTION_SEGMENT_EVENT
 } from '../constants';
 
 import platformChecker from '../modules/PlatformChecker';
@@ -32,6 +33,7 @@ class SubscribeWidget {
   style: HTMLElement;
   pw: Pushwoosh;
   config: TBellConfig;
+  isEnableChannels?: boolean;
 
   constructor(pw: Pushwoosh) {
     // Set Pushwoosh object
@@ -44,20 +46,37 @@ class SubscribeWidget {
     // Bindings
     this.clickBell = this.clickBell.bind(this);
     this.onSubscribeEvent = this.onSubscribeEvent.bind(this);
+    this.onUnsubscribeEvent = this.onUnsubscribeEvent.bind(this);
     this.onPermissionDeniedEvent = this.onPermissionDeniedEvent.bind(this);
     this.clickOutOfPopover = this.clickOutOfPopover.bind(this);
+    this.onClickBellIfEnableChannels = this.onClickBellIfEnableChannels.bind(this);
 
     // Config
     const tooltipText = Object.assign(SUBSCRIBE_WIDGET_DEFAULT_CONFIG.tooltipText, this.pw.subscribeWidgetConfig.tooltipText);
     this.config = Object.assign(SUBSCRIBE_WIDGET_DEFAULT_CONFIG, this.pw.subscribeWidgetConfig);
     this.config.tooltipText = tooltipText;
 
+    const arrActions = [];
+
+    // if enabled channels
+    const isEnableChannels = this.pw.isEnableChannels();
+
     // Render if not subscribed
-    this.pw.isSubscribed().then((subscribed: boolean) => {
-      if (!subscribed) {
-        this.render();
-      }
-    });
+    const isSubscribed = this.pw.isSubscribed();
+
+    arrActions.push(isEnableChannels);
+    arrActions.push(isSubscribed);
+
+    Promise.all(arrActions)
+      .then(([isEnableChannels, isSubscribed]) => {
+        if (isEnableChannels) {
+          this.isEnableChannels = true;
+        }
+
+        if (!isSubscribed || isEnableChannels) {
+          this.render();
+        }
+      });
   }
 
   /**
@@ -264,10 +283,29 @@ class SubscribeWidget {
 
     document.body.appendChild(this.widget);
 
-    // Events
-    bell.addEventListener('click', this.clickBell);
     this.pw.push(['onSubscribe', this.onSubscribeEvent]);
+    this.pw.push(['onUnsubscribe', this.onUnsubscribeEvent]);
     this.pw.push(['onPermissionDenied', this.onPermissionDeniedEvent]);
+
+    // Events
+    if (this.isEnableChannels) {
+      this.widget.addEventListener('click', this.onClickBellIfEnableChannels);
+
+      return;
+    }
+
+    this.addEventListenersIfDisabledChannels();
+  }
+
+  onClickBellIfEnableChannels() {
+    // need show subscription segment in-app
+    this.pw.push((api) => {
+      api.postEvent(SUBSCRIPTION_SEGMENT_EVENT, {});
+    });
+  }
+
+  async addEventListenersIfDisabledChannels() {
+    this.widget.addEventListener('click', this.clickBell);
     window.addEventListener('click', this.clickOutOfPopover);
     await this.triggerPwEvent(EVENT_SHOW_SUBSCRIBE_BUTTON, KEY_SHOW_SUBSCRIBE_WIDGET);
   }
@@ -284,25 +322,26 @@ class SubscribeWidget {
    * @returns {Promise<void>}
    */
   private async clickBell() {
-    const permission = await this.pw.driver.getPermission();
-    const isManuallyUnsubscribed = await keyValue.get(MANUAL_UNSUBSCRIBE);
-    await this.triggerPwEvent(EVENT_CLICK_SUBSCRIBE_BUTTON, KEY_CLICK_SUBSCRIBE_WIDGET);
+    const permission = this.pw.driver.getPermission();
+
     switch (permission) {
       case PERMISSION_GRANTED:
-        if (isManuallyUnsubscribed) {
-          this.pw.forceSubscribe();
-        }
+        await this.pw.subscribe();
 
-        return;
+        break;
       case PERMISSION_PROMPT:
-        this.pw.subscribe();
-        return;
+        await this.pw.subscribe();
+
+        break;
       case PERMISSION_DENIED:
         this.toggleHelpPopover();
-        return;
+
+        break;
       default:
         console.warn('Unknown browser notification permission')
     }
+
+    await this.triggerPwEvent(EVENT_CLICK_SUBSCRIBE_BUTTON, KEY_CLICK_SUBSCRIBE_WIDGET);
   }
 
   /**
@@ -310,15 +349,24 @@ class SubscribeWidget {
    * @returns {Promise<void>}
    */
   private async onSubscribeEvent() {
+    const isEnableChannels = this.pw.isEnableChannels();
     const tooltipContent = this.tooltip.querySelector('div');
-    if (tooltipContent === null) return;
-    tooltipContent.innerText = this.config.tooltipText.successSubscribe;
 
+    if (tooltipContent === null) {
+      return;
+    }
+
+    tooltipContent.innerText = this.config.tooltipText.successSubscribe;
     this.tooltip.classList.add('pushwoosh-subscribe-widget__tooltip__visible');
+
     setTimeout(async () => {
       this.tooltip.classList.remove('pushwoosh-subscribe-widget__tooltip__visible');
       tooltipContent.innerText = await this.tooltipTextFactory();
-      this.widget.classList.add('pushwoosh-subscribe-widget__subscribed');
+
+      // if not enabled subscription segmentation need hide bell
+      if (!isEnableChannels) {
+        this.widget.classList.add('pushwoosh-subscribe-widget__subscribed');
+      }
     }, 2000);
   }
 
@@ -327,6 +375,15 @@ class SubscribeWidget {
    * @returns {Promise<void>}
    */
   private async onPermissionDeniedEvent() {
+    const isEnableChannels = await this.pw.isEnableChannels();
+
+    // if enabled channels -> show image for unblock permission
+    if (isEnableChannels) {
+      this.widget.removeEventListener('click', this.onClickBellIfEnableChannels);
+
+      this.addEventListenersIfDisabledChannels();
+    }
+
     const tooltipContent = this.tooltip.querySelector('div');
     if (tooltipContent === null) return;
     tooltipContent.innerText = await this.tooltipTextFactory();
@@ -353,15 +410,19 @@ class SubscribeWidget {
    * @returns {Promise<void>}
    */
   async triggerPwEvent(event: string, widget: string) {
-    if (this.pw.api === undefined) {
+    // no more aggregate statistics
+
+    return;
+  }
+
+  private async onUnsubscribeEvent() {
+    const tooltipContent = this.tooltip.querySelector('div');
+
+    if (tooltipContent === null) {
       return;
     }
 
-    const {applicationCode} = await this.pw.getParams();
-    this.pw.api.triggerEvent({
-      event_id: event,
-      application: applicationCode
-    }, widget);
+    tooltipContent.innerText = await this.tooltipTextFactory();
   }
 }
 

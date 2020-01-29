@@ -5,6 +5,7 @@ const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const GenerateJsonPlugin = require('generate-json-webpack-plugin');
 const CleanWebpackPlugin = require('clean-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 const ScriptExtHtmlWebpackPlugin = require('script-ext-html-webpack-plugin');
 const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
@@ -83,6 +84,7 @@ module.exports = {
     ]
   },
   plugins: [
+    // new CopyWebpackPlugin([{ from: path.resolve(__dirname, 'develop/channels.zip')}]),
     new CleanWebpackPlugin([path.resolve(__dirname, 'dist')]),
     new webpack.optimize.OccurrenceOrderPlugin(),
     new webpack.DefinePlugin(defines),

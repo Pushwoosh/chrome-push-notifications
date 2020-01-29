@@ -1,12 +1,13 @@
-import { EventBus } from '../EventBus/EventBus';
+import { CommandBus, TCommands } from '../CommandBus/CommandBus';
+import { EventBus, TEvents } from '../EventBus/EventBus';
 
 import {
-  MODAL_WRAPPER_NAMESPACE,
+  MODAL_CLOSE_BUTTON_NAMESPACE,
+  MODAL_DEFAILT_OPTIONS,
+  MODAL_IFRAME_NAMESPACE,
   MODAL_INNER_NAMESPACE,
   MODAL_LOADER_NAMESPACE,
-  MODAL_CLOSE_BUTTON_NAMESPACE,
-  MODAL_IFRAME_NAMESPACE,
-  MODAL_DEFAILT_OPTIONS
+  MODAL_WRAPPER_NAMESPACE
 } from './Modal.constants';
 
 import { IModalOptions } from './Modal.types';
@@ -225,21 +226,36 @@ export class Modal {
       this.hide();
     });
 
+    const commandBus = CommandBus.getInstance();
     const eventBus = EventBus.getInstance();
 
-    eventBus.on('needCloseInApp', () => {
+    commandBus.on(TCommands.CLOSE_IN_APP, () => {
       this.hide();
     });
+
+    commandBus.on(TCommands.POST_MESSAGE_TO_IFRAME, (data) => {
+      // @ts-ignore
+      this.iframe.contentWindow.postMessage(JSON.stringify(data), '*');
+    });
+
+    eventBus.on(TEvents.HIDE_NOTIFICATION_PERMISSION_DIALOG, () => {
+      // @ts-ignore
+      this.iframe.contentWindow.postMessage(JSON.stringify({ method: 'onHidePermissionDialog' }), '*');
+    })
   }
 
   show() {
     this.wrapper.className = MODAL_WRAPPER_NAMESPACE + ' ' + MODAL_WRAPPER_NAMESPACE + '_state-show';
+
+    document.body.style.overflow = 'hidden';
 
     return this;
   }
 
   hide() {
     this.wrapper.className = MODAL_WRAPPER_NAMESPACE;
+
+    document.body.style.overflow = 'auto';
 
     return this;
   }

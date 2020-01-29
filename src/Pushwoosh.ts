@@ -1,127 +1,119 @@
-import {sendFatalLogToRemoteServer} from './helpers/logger';
+import { v4 } from 'uuid';
+
+import { Api } from './modules/Api/Api';
+import { Data } from './modules/Data/Data';
+import { ApiClient } from './modules/ApiClient/ApiClient';
+import { PushServiceDefault, PushServiceSafari } from './services/PushService/PushService';
+
+import * as CONSTANTS from './constants';
+
 import EventEmitter from './EventEmitter';
-import API from './API';
-import {
-  getVersion,
-  patchPromise,
-  clearLocationHash,
-  validateParams
-} from './functions';
+import {clearLocationHash, patchPromise} from './functions';
 import {PlatformChecker} from './modules/PlatformChecker';
 
-import {
-  DEFAULT_SERVICE_WORKER_URL,
-  KEY_API_PARAMS,
-  KEY_INIT_PARAMS,
-  KEY_SDK_VERSION,
-  KEY_LAST_OPEN_MESSAGE,
-  KEY_LAST_SENT_APP_OPEN,
-  PERIOD_SEND_APP_OPEN,
-  KEY_DEVICE_REGISTRATION_STATUS,
-  KEY_SAFARI_PREVIOUS_PERMISSION,
-  MANUAL_SET_LOGGER_LEVEL,
-  KEY_COMMUNICATION_ENABLED,
-  KEY_DEVICE_DATA_REMOVED,
-  KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS,
-
-  PERMISSION_DENIED,
-  PERMISSION_GRANTED,
-  PERMISSION_PROMPT,
-
-  KEY_DELAYED_EVENT,
-
-  EVENT_GDPR_CONSENT,
-  EVENT_GDPR_DELETE,
-
-  DEVICE_REGISTRATION_STATUS_REGISTERED,
-  DEVICE_REGISTRATION_STATUS_UNREGISTERED,
-
-  EVENT_ON_READY,
-  EVENT_ON_SUBSCRIBE,
-  EVENT_ON_UNSUBSCRIBE,
-  EVENT_ON_REGISTER,
-  EVENT_ON_PERMISSION_PROMPT,
-  EVENT_ON_PERMISSION_DENIED,
-  EVENT_ON_PERMISSION_GRANTED,
-  EVENT_ON_SW_INIT_ERROR,
-  EVENT_ON_PUSH_DELIVERY,
-  EVENT_ON_NOTIFICATION_CLICK,
-  EVENT_ON_NOTIFICATION_CLOSE,
-  EVENT_ON_CHANGE_COMMUNICATION_ENABLED,
-  EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE,
-  EVENT_ON_UPDATE_INBOX_MESSAGES,
-  MANUAL_UNSUBSCRIBE,
-  EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG,
-  EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG,
-  PAGE_VISITED_URL
-} from './constants';
-import Logger from './logger'
-import WorkerDriver from './drivers/worker';
-import SafariDriver from './drivers/safari';
+import { Logger } from './logger'
 import FacebookModule from './modules/FacebookModule';
-import { InApps } from './modules/InApps/InApps';
+import {InApps} from './modules/InApps/InApps';
 import {keyValue, log as logStorage, message as messageStorage} from './storage';
 
-import Params from './modules/data/Params';
 import InboxMessagesModel from './models/InboxMessages';
 import InboxMessagesPublic from './modules/InboxMessagesPublic';
-import { EventBus } from './modules/EventBus/EventBus';
+import {EventBus, TEvents} from './modules/EventBus/EventBus';
+import {CommandBus, TCommands} from './modules/CommandBus/CommandBus';
 
+import { IPushService } from './services/PushService/PushService.types';
 
 type ChainFunction = (param: any) => Promise<any> | any;
 
 patchPromise();
 
-class Pushwoosh {
-  private platformChecker: PlatformChecker;
-  private params: IInitParamsWithDefaults;
-  private _initParams: IInitParams;
-  private _ee: EventEmitter = new EventEmitter();
-  private _isNeedResubscribe: boolean = false;
-  private readonly _onPromises: { [key: string]: Promise<ChainFunction> };
-  private inboxModel: InboxMessagesModel;
-  private eventBus: EventBus;
+export default class Pushwoosh {
+  private readonly data: Data;
+  private readonly apiClient: ApiClient;
 
-  public api: API;
-  public driver: IPWDriver;
-  public permissionOnInit: string;
+  private isCommunicationDisabled?: boolean;
+
+  public readonly api: Api;
+
+  public driver: IPushService;
+
+
+  private platformChecker: PlatformChecker;
+  private _ee: EventEmitter = new EventEmitter();
+  private readonly _onPromises: { [key: string]: Promise<ChainFunction> };
+  private readonly eventBus: EventBus;
+  private readonly commandBus: CommandBus;
+
   public ready: boolean = false;
   public subscribeWidgetConfig: ISubscribeWidget;
   public inboxWidgetConfig: IInboxWidget;
-  public subscribePopupConfig: any; // TODO: !!!
-  public paramsModule: Params;
+  public subscribePopupConfig: any;
   public InApps: InApps;
 
   // Inbox messages public interface
   public pwinbox: InboxMessagesPublic;
+  private inboxModel: InboxMessagesModel;
 
   constructor(
-    paramsModule: Params = new Params(),
-    inboxMessages: InboxMessagesModel = new InboxMessagesModel(),
-    pwinbox: InboxMessagesPublic = new InboxMessagesPublic(),
     platformChecker: PlatformChecker = new PlatformChecker()
   ) {
-    this.pwinbox = pwinbox;
-    this.inboxModel = inboxMessages;
-    this.paramsModule = paramsModule;
+    this.data = new Data();
+
+    this.commandBus = CommandBus.getInstance();
+    this.eventBus = EventBus.getInstance();
+
+    this.apiClient = new ApiClient(this.data);
+    this.api = new Api(this.data, this.apiClient, this.commandBus, this.eventBus, this._ee);
+
+
+    this.inboxModel = new InboxMessagesModel(this.data, this.api);
+    this.pwinbox = new InboxMessagesPublic(this.data, this.api, this.inboxModel);
+
     this.platformChecker = platformChecker;
     this._onPromises = {};
 
     if (this.platformChecker.isAvailablePromise) {
       this._onPromises = {
-        [EVENT_ON_PERMISSION_DENIED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_DENIED, resolve)),
-        [EVENT_ON_PERMISSION_PROMPT]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_PROMPT, resolve)),
-        [EVENT_ON_PERMISSION_GRANTED]: new Promise(resolve => this._ee.once(EVENT_ON_PERMISSION_GRANTED, resolve)),
+        [CONSTANTS.EVENT_ON_PERMISSION_DENIED]: new Promise(resolve => this._ee.once(CONSTANTS.EVENT_ON_PERMISSION_DENIED, resolve)),
+        [CONSTANTS.EVENT_ON_PERMISSION_PROMPT]: new Promise(resolve => this._ee.once(CONSTANTS.EVENT_ON_PERMISSION_PROMPT, resolve)),
+        [CONSTANTS.EVENT_ON_PERMISSION_GRANTED]: new Promise(resolve => this._ee.once(CONSTANTS.EVENT_ON_PERMISSION_GRANTED, resolve)),
       };
     }
 
     // Bindings
     this.onServiceWorkerMessage = this.onServiceWorkerMessage.bind(this);
 
-    this.eventBus = EventBus.getInstance();
 
-    this.eventBus.on('askSubscribe', () => {
-      this.subscribe();
+    // subscribe by connector
+    this.commandBus.on(TCommands.SUBSCRIBE, ({ commandId }) => {
+      this.subscribe()
+        .then(() => {
+          this.eventBus.emit(TEvents.SUBSCRIBE, commandId);
+        });
+    });
+
+    // unsubscribe by connector
+    this.commandBus.on(TCommands.UNSUBSCRIBE, ({ commandId }) => {
+      this.unsubscribe()
+        .then(() => {
+          this.eventBus.emit(TEvents.UNSUBSCRIBE, commandId);
+        });
+    });
+
+    // check subscribe status by connector
+    this.commandBus.on(TCommands.CHECK_IS_SUBSCRIBED, ({ commandId }) => {
+      this.api.checkDeviceSubscribeForPushNotifications(false)
+        .then((state) => {
+          this.eventBus.emit(TEvents.CHECK_IS_SUBSCRIBED, { state: state }, commandId);
+        });
+    });
+
+    // check subscribe status by connector
+    this.commandBus.on(TCommands.CHECK_IS_MANUAL_UNSUBSCRIBED, ({ commandId }) => {
+      this.data.getStatusManualUnsubscribed()
+        .then((state: boolean) => {
+          this.eventBus.emit(TEvents.CHECK_IS_MANUAL_UNSUBSCRIBED, { state: state }, commandId);
+        });
     });
   }
 
@@ -145,18 +137,6 @@ class Pushwoosh {
   };
 
   /**
-   * Method invoking the transmitted callback when the API is ready
-   * @param cmd
-   */
-  onReadyHandler(cmd: HandlerFn) {
-    if (this.ready) {
-      cmd(this.api);
-    } else {
-      this._ee.on(EVENT_ON_READY, (params) => cmd(this.api, params));
-    }
-  }
-
-  /**
    * Polymorph PW method.
    * Can get array in format [string, params | callback] or function.
    *
@@ -178,73 +158,508 @@ class Pushwoosh {
    *    // https://docs.pushwoosh.com/docs/web-push-sdk-30#section-integration
    *  }]);
    *
-   * @param cmd
+   * @param command
    */
-  public async push(cmd: PWInput) {
-    if (typeof cmd === 'function') {
-      this.onReadyHandler(cmd);
-    } else if (Array.isArray(cmd)) {
-      const [cmdName, cmdFunc] = cmd;
-      switch (cmdName) {
-        case 'init':
-          if (typeof cmdFunc !== 'object') {
-            break;
-          }
+  public push(command: PWInput) {
+    if (typeof command === 'function') {
+      this.handleOnReadyCallback(command);
 
-          if (this.platformChecker.isAvailableNotifications) {
-            try {
-              this.initFacebook(cmdFunc);
-              await this.init(cmdFunc)
-                .then(() => {
-                  return this.initInApp(cmdFunc);
-                });
-            } catch (e) {
-              Logger.write('info', 'Pushwoosh init failed', e)
-            }
-          } else {
-            this.initFacebook(cmdFunc);
-            Logger.write('info', 'This browser does not support pushes');
-          }
+      return;
+    }
 
+    if (!Array.isArray(command)) {
+      throw new Error('Invalid command!');
+    }
 
-          break;
-        case EVENT_ON_READY:
-          if (typeof cmdFunc !== 'function') {
-            break;
-          }
-          this.onReadyHandler(cmdFunc);
-          break;
-        case EVENT_ON_REGISTER:
-        case EVENT_ON_SUBSCRIBE:
-        case EVENT_ON_UNSUBSCRIBE:
-        case EVENT_ON_SW_INIT_ERROR:
-        case EVENT_ON_PUSH_DELIVERY:
-        case EVENT_ON_NOTIFICATION_CLICK:
-        case EVENT_ON_NOTIFICATION_CLOSE:
-        case EVENT_ON_CHANGE_COMMUNICATION_ENABLED:
-        case EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE:
-        case EVENT_ON_UPDATE_INBOX_MESSAGES:
-        case EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG:
-        case EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG:
-          if (typeof cmdFunc !== 'function') {
-            break;
-          }
-          this._ee.on(cmdName, (params: any) => cmdFunc(this.api, params));
-          break;
-        case EVENT_ON_PERMISSION_DENIED:
-        case EVENT_ON_PERMISSION_PROMPT:
-        case EVENT_ON_PERMISSION_GRANTED:
-          if (typeof cmdFunc !== 'function') {
-            break;
-          }
-          this._onPromises[cmdName] && this._onPromises[cmdName].then(() => cmdFunc(this.api));
-          break;
-        default:
-          throw new Error('unknown command');
+    switch (command[0]) {
+      case 'init':
+        this.initialize(command[1]);
+
+        break;
+
+      case CONSTANTS.EVENT_ON_READY:
+        this.handleOnReadyCallback(command[1]);
+        break;
+
+      case CONSTANTS.EVENT_ON_REGISTER:
+      case CONSTANTS.EVENT_ON_SUBSCRIBE:
+      case CONSTANTS.EVENT_ON_UNSUBSCRIBE:
+      case CONSTANTS.EVENT_ON_SW_INIT_ERROR:
+      case CONSTANTS.EVENT_ON_PUSH_DELIVERY:
+      case CONSTANTS.EVENT_ON_NOTIFICATION_CLICK:
+      case CONSTANTS.EVENT_ON_NOTIFICATION_CLOSE:
+      case CONSTANTS.EVENT_ON_CHANGE_COMMUNICATION_ENABLED:
+      case CONSTANTS.EVENT_ON_PUT_NEW_MESSAGE_TO_INBOX_STORE:
+      case CONSTANTS.EVENT_ON_UPDATE_INBOX_MESSAGES:
+      case CONSTANTS.EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG:
+      case CONSTANTS.EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG:
+        this.handleEventCallback(command[0], command[1]);
+
+        break;
+
+      case CONSTANTS.EVENT_ON_PERMISSION_DENIED:
+      case CONSTANTS.EVENT_ON_PERMISSION_PROMPT:
+      case CONSTANTS.EVENT_ON_PERMISSION_GRANTED:
+        this.handleOnChangePermissionCallback(command[0], command[1]);
+        break;
+
+      default:
+        throw new Error('Unknown command!');
+    }
+  }
+
+  /**
+   * Method initializes the permission dialog on the device
+   * and registers through the API in case the device hasn't been registered before.
+   * @returns {Promise<void>}
+   */
+  public async subscribe(isForceSubscribe = true): Promise<void> {
+    if (this.isCommunicationDisabled) {
+      Logger.error('Communication is disabled!');
+    }
+
+    const isPermissionDefault = this.driver.checkIsPermissionDefault();
+
+    // if permission granted need ask permission for send notifications
+    if (isPermissionDefault) {
+      // emit event when permission dialog show
+      this._ee.emit(CONSTANTS.EVENT_ON_SHOW_NOTIFICATION_PERMISSION_DIALOG);
+      this.eventBus.emit(TEvents.SHOW_NOTIFICATION_PERMISSION_DIALOG);
+
+      // all action before this MUST be a synchrony because
+      // in new release in ff 72 we must call this event by user
+      // ask permission
+      // ask permissions only show prompt window, not register device for send push notifications
+      await this.driver.askPermission();
+
+      const permission = this.driver.getPermission();
+
+      // emit event when permission dialog hide with permission state
+      this._ee.emit(CONSTANTS.EVENT_ON_HIDE_NOTIFICATION_PERMISSION_DIALOG, permission);
+      this.eventBus.emit(TEvents.HIDE_NOTIFICATION_PERMISSION_DIALOG);
+    }
+
+    const permission = this.driver.getPermission();
+    const isManualUnsubscribed = await this.data.getStatusManualUnsubscribed();
+    const isDeviceRegister = await this.driver.checkIsRegister();
+
+    // if permission granted emit event and register device into pushwoosh
+    if (permission === CONSTANTS.PERMISSION_GRANTED) {
+      this._ee.emit(CONSTANTS.EVENT_ON_PERMISSION_GRANTED);
+      const needSubscribe = isForceSubscribe || !isManualUnsubscribed;
+
+      this._ee.emit(CONSTANTS.EVENT_ON_SUBSCRIBE);
+
+      if (needSubscribe && !isDeviceRegister) {
+        await this.driver.subscribe();
+      }
+
+      return;
+    }
+
+    // if permission denied emit event
+    if (permission === CONSTANTS.PERMISSION_DENIED) {
+      this._ee.emit(CONSTANTS.EVENT_ON_PERMISSION_DENIED);
+
+      if (isDeviceRegister) {
+        await this.driver.unsubscribe();
+      }
+
+      return;
+    }
+  }
+
+  /**
+   * Unsubscribe device.
+   * @returns {Promise<void>}
+   */
+  public async unsubscribe() {
+    try {
+      await this.driver.unsubscribe();
+    } catch (error) {
+      Logger.error(error, 'Error occurred during the unsubscribe');
+    }
+  }
+
+  /**
+   * force subscribe if there was a manual unsubscribe
+   * @returns {Promise<void>}
+   */
+  public async forceSubscribe() {
+    await this.subscribe(true);
+  }
+
+  /**
+   * Check device's registration status
+   * @returns {boolean}
+   */
+  public isDeviceRegistered(): boolean {
+    return localStorage.getItem(CONSTANTS.KEY_DEVICE_REGISTRATION_STATUS) === CONSTANTS.DEVICE_REGISTRATION_STATUS_REGISTERED;
+  }
+
+  public isDeviceUnregistered(): boolean {
+    return localStorage.getItem(CONSTANTS.KEY_DEVICE_REGISTRATION_STATUS) === CONSTANTS.DEVICE_REGISTRATION_STATUS_UNREGISTERED;
+  }
+
+  /**
+   * Check device's subscription status
+   * @returns {Promise<boolean>}
+   */
+  public async isSubscribed(): Promise<boolean> {
+    return this.api.checkDeviceSubscribeForPushNotifications();
+  }
+
+  /**
+   * Check current communication state
+   * @returns {Promise<boolean>}
+   */
+  public async isCommunicationEnabled() {
+    const isCommunicationDisabled = await this.data.getStatusCommunicationDisabled();
+
+    return !isCommunicationDisabled;
+  }
+
+  /**
+   * Send "GDPRConsent" postEvent and depends on param "isEnabled"
+   * device will be registered/unregistered from all communication channels.
+   * @param {boolean} isEnabled
+   * @returns {Promise<void>}
+   */
+  public async setCommunicationEnabled(isEnabled: boolean = true) {
+    const deviceType = await this.data.getDeviceType();
+    const isPermissionGranted = this.driver.checkIsPermissionGranted();
+
+    await this.data.setStatusCommunicationDisabled(!isEnabled);
+
+    if (isEnabled) {
+      await this.data.setStatusDropAllData(false);
+      if (isPermissionGranted) {
+        await this.api.registerDevice();
       }
     } else {
-      throw new Error('invalid command');
+      await this.api.unregisterDevice();
     }
+
+    this._ee.emit(CONSTANTS.EVENT_ON_CHANGE_COMMUNICATION_ENABLED, isEnabled);
+
+    await this.api.postEvent(CONSTANTS.EVENT_GDPR_CONSENT, {
+      channel: isEnabled,
+      device_type: deviceType,
+    });
+  }
+
+  /**
+   * Send "GDPRDelete" postEvent and remove all device device data from Pushwoosh.
+   * @returns {Promise<void>}
+   */
+  public async removeAllDeviceData() {
+    const deviceType = await this.data.getDeviceType();
+
+    await this.api.postEvent(CONSTANTS.EVENT_GDPR_DELETE, {
+      status: true,
+      device_type: deviceType
+    });
+
+    await this.api.deleteDevice();
+    await this.data.clearAll();
+
+    await this.data.setStatusDropAllData(true);
+  }
+
+  /**
+   * Method returns hardware id.
+   * @returns {Promise<string>}
+   */
+  public async getHWID(): Promise<string> {
+    return await this.data.getHwid();
+  }
+
+  /**
+   * Method returns push token.
+   * @returns {Promise<string>}
+   */
+  public async getPushToken(): Promise<string | undefined> {
+    const { pushToken } = await this.data.getTokens();
+
+    return pushToken;
+  }
+
+  /**
+   * Method returns userId
+   * @returns {Promise<string | null>}
+   */
+  public async getUserId(): Promise<string | undefined> {
+    return await this.data.getUserId();
+  }
+
+  /**
+   * Method returns an object with all params.
+   * @returns {Promise<IPWParams>}
+   */
+  public async getParams() {
+    return await this.api.getParams();
+  }
+
+  /**
+   * Method returns  true if notifications available.
+   * @returns {boolean}
+   */
+  public isAvailableNotifications() {
+    return this.platformChecker.isAvailableNotifications;
+  }
+
+  public async sendStatisticsVisitedPage() {
+    const {
+      document: { title },
+      location: { origin, pathname, href }
+    } = window;
+
+    await this.api.pageVisit({
+      title,
+      url_path: `${origin}${pathname}`,
+      url: href
+    });
+  }
+
+  public async isEnableChannels(): Promise<boolean> {
+    const channels: unknown = await keyValue.get(CONSTANTS.CHANNELS);
+
+    return Array.isArray(channels) && !!channels.length;
+  }
+
+  private async initialize(params: IInitParams) {
+    // step 0: set logger configuration
+    const manualDebug = localStorage.getItem(CONSTANTS.MANUAL_SET_LOGGER_LEVEL);
+    Logger.setLevel(manualDebug || params.logLevel || 'error');
+
+    // step 1: check application code
+    const applicationCode = await this.data.getApplicationCode();
+
+    if (!params.applicationCode) {
+      throw new Error('Can\'t find application code!');
+    }
+
+    const notSavedApplicationCode = !applicationCode;
+    const isChangeApplicationCode = applicationCode && applicationCode !== params.applicationCode;
+
+    // if have not old application code or application code was change => remove all info about init params and subscription
+    if (notSavedApplicationCode || isChangeApplicationCode) {
+      await this.data.clearAll();
+      await this.data.setApplicationCode(params.applicationCode);
+    }
+
+    // step 2: check hwid
+    const hwid = await this.data.getHwid();
+
+    if (!hwid) {
+      const id = params.applicationCode + '_' + v4();
+
+      await this.data.setHwid(id);
+    } else {
+      await this.api.checkDevice();
+    }
+
+    // step 3: check user id
+    const userIdWasChange = await this.data.getStatusUserIdWasChanged();
+
+    if (!userIdWasChange) {
+      await this.data.setUserId(params.userId);
+    }
+
+    // step 4: add info about platform
+    await this.data.setDeviceType(this.platformChecker.getPlatformType());
+    await this.data.setDeviceModel(this.platformChecker.getBrowserVersion());
+    await this.data.setLanguage(params.tags && params.tags.Language || navigator.language);
+
+    // step 5: set configuration info
+    if (params.pushwooshUrl) {
+      await this.data.setApiEntrypoint(params.pushwooshUrl);
+    }
+
+    await this.data.setSdkVersion(__VERSION__);
+
+    this.subscribeWidgetConfig = {
+      enable: false,
+      ...params.subscribeWidget
+    };
+
+    this.inboxWidgetConfig = {
+      enable: false,
+      ...params.inboxWidget
+    };
+
+    this.subscribePopupConfig = {
+      enable: false,
+      ...params.subscribePopup
+    };
+
+    // step 6: check communication disabled
+    this.isCommunicationDisabled = await this.data.getStatusCommunicationDisabled();
+
+    await this.open();
+
+    // step 7: init push notification
+    if (this.platformChecker.isAvailableNotifications) {
+      await this.initPushNotifications(params);
+    }
+
+    // step 8: init submodules module
+    await this.inboxModel.updateMessages(this._ee);
+
+    await this.initInApp(params);
+    await this.initFacebook(params);
+
+    // step 9: ready
+    this._ee.emit(CONSTANTS.EVENT_ON_READY);
+    this.ready = true;
+
+    const delayedEvent = await this.data.getDelayedEvent();
+
+    if (delayedEvent) {
+      const { type, payload } = delayedEvent;
+      await this._ee.emit(type, payload);
+      await keyValue.set(CONSTANTS.KEY_DELAYED_EVENT, null);
+    }
+
+    if ('serviceWorker' in navigator) {
+      // @ts-ignore
+      navigator.serviceWorker.onmessage = this.onServiceWorkerMessage;
+    }
+
+    localStorage.setItem('pushwoosh-websdk-status', 'init');
+
+    // Dispatch 'pushwoosh.initialized' event
+    document.dispatchEvent(new CustomEvent('pushwoosh.initialized', {
+      detail: {
+        pw: this
+      }
+    }));
+
+    // send push stat only in safari, because safari haven't service worker
+    // in other browsers stat will be send in service worker
+    if (this.platformChecker.isSafari) {
+      this._ee.on(CONSTANTS.EVENT_ON_READY, () => {
+        const hashReg: any = /#P(.*)/;
+        const hash = decodeURIComponent(document.location.hash);
+
+        if (hashReg.test(hash)) {
+          this.api
+            .pushStat(hashReg.exec(hash)[1])
+            .then(clearLocationHash);
+        }
+      });
+    }
+  }
+
+  /**
+   * Default process during PW initialization.
+   * Init API. Subscription to notifications.
+   * Emit delayed events.
+   * @returns {Promise<void>}
+   */
+  private async defaultProcess(initParams: IInitParams) {
+    const isRegister = await this.api.checkDeviceSubscribeForPushNotifications();
+    const isCommunicationDisabled = await this.data.getStatusCommunicationDisabled();
+    const isDropAllData = await this.data.getStatusDropAllData();
+    const isNeedResubscribe = await this.driver.checkIsNeedResubscribe();
+
+    if (isCommunicationDisabled || isDropAllData) {
+      await this.unsubscribe();
+
+      return;
+    }
+
+    if (isNeedResubscribe) {
+      await this.unsubscribe();
+      await this.data.setStatusManualUnsubscribed(false);
+    }
+
+    const { autoSubscribe } = initParams;
+    const permission = this.driver.getPermission();
+    const isManualUnsubscribed = await this.data.getStatusManualUnsubscribed();
+
+    // Actions depending of the permissions
+    switch (permission) {
+      case CONSTANTS.PERMISSION_PROMPT:
+        // emit event permission default
+        this._ee.emit(CONSTANTS.EVENT_ON_PERMISSION_PROMPT);
+
+        // device can't be register if permission default
+        if (isRegister) {
+          await this.unsubscribe();
+        }
+
+        // for get user click
+        if (autoSubscribe) {
+          console.warn('Option autoSubscribe well be deprecated on 14 February 2020. Please use "Push Subscription Button" or "Custom Subscription Popup"');
+
+          this.subscribe();
+        }
+
+        break;
+
+      case CONSTANTS.PERMISSION_DENIED:
+        // emit event permission denied
+        this._ee.emit(CONSTANTS.EVENT_ON_PERMISSION_DENIED);
+
+        // device can't be register if permission default
+        if (isRegister) {
+          await this.unsubscribe();
+        }
+
+        break;
+      case CONSTANTS.PERMISSION_GRANTED:
+        // emit event permission granted
+        this._ee.emit(CONSTANTS.EVENT_ON_PERMISSION_GRANTED);
+
+        // device can't be register if manual unsubscribed
+        if (isManualUnsubscribed && isRegister) {
+          await this.unsubscribe();
+        }
+
+        // device must be register if not manual unsubscribed
+        // or if change configuration -> resubscribe device for get new push token
+        if (!isRegister && !isManualUnsubscribed || isNeedResubscribe) {
+          await this.subscribe();
+        }
+
+        break;
+    }
+  }
+
+  /**
+   * Method invoking the transmitted callback when the API is ready
+   * @param cmd
+   */
+  private onReadyHandler(cmd: HandlerFn) {
+    if (this.ready) {
+      cmd(this.api);
+    } else {
+      this._ee.on(CONSTANTS.EVENT_ON_READY, (params) => cmd(this.api, params));
+    }
+  }
+
+  private handleOnReadyCallback(callback: PushOnReadyCallback) {
+    this.onReadyHandler(callback);
+  }
+
+  private handleOnChangePermissionCallback(name: PWEvent, callback: HandlerFn) {
+    const currentPromise = this._onPromises[name];
+
+    if (!currentPromise) {
+      return;
+    }
+
+    currentPromise
+      .then(() => {
+        return callback(this.api);
+      });
+  }
+
+  private handleEventCallback(name: PWEvent, callback: HandlerFn) {
+    this._ee.on(name, (params: any) => {
+      return callback(this.api, params);
+    });
   }
 
   /**
@@ -252,7 +667,6 @@ class Pushwoosh {
    * @param {IInitParams} initParams
    * @returns {Promise<void>}
    */
-
   private initFacebook(initParams: IInitParams) {
     const facebook = {
       enable: false,
@@ -270,7 +684,7 @@ class Pushwoosh {
           userId: initParams.userId || ''
         });
       } catch (error) {
-        Logger.write('error', error, 'facebook module initialization failed');
+        Logger.error(error, 'facebook module initialization failed');
       }
     }
   }
@@ -280,151 +694,32 @@ class Pushwoosh {
    * @param {IInitParams} params
    * @return {Promise<void>}
    */
-  private initInApp(params: IInitParams) {
+  private async initInApp(params: IInitParams) {
+    const isEnabledByConfig = await keyValue.get('isEnableWebInApps');
+    const isEnabledByInitParams = params.inApps && params.inApps.enable;
+
     const inAppInitParams = {
-      enable: false,
-      ...params.inApps
+      ...params.inApps,
+      enable: isEnabledByConfig || isEnabledByInitParams
     };
 
     if (inAppInitParams.enable) {
       try {
         this.InApps = new InApps(inAppInitParams, this.api);
+
+        await this.InApps.init()
+          .then(() => {
+            Logger.info('InApps module has been initialized');
+
+            this.eventBus.emit(TEvents.INIT_IN_APPS_MODULE);
+          })
+          .catch((error) => {
+            Logger.error(error, 'InApps module initialization has been failed');
+          });
       } catch (error) {
-        Logger.write('error', error,'InApp module initialization has been failed')
+        Logger.error(error, 'InApp module initialization has been failed')
       }
     }
-  }
-
-  /**
-   * Method initiates PW services.
-   * @param {IInitParams} initParams
-   * @returns {Promise<void>}
-   */
-  private async init(initParams: IInitParams) {
-    this._initParams = initParams;
-    const {
-      scope,
-      applicationCode,
-      pushwooshApiUrl,
-      userId = '',
-      logLevel = 'error'
-    } = initParams;
-
-    if (!applicationCode) {
-      throw new Error('no application code');
-    }
-
-    const prevParams = await this.getParams();
-    if (prevParams.applicationCode && prevParams.applicationCode !== applicationCode) {
-      this._isNeedResubscribe = true;
-    }
-
-    // Set init params in module
-    await this.paramsModule.setAppCode(applicationCode);
-    await this.paramsModule.setApiUrl(pushwooshApiUrl);
-    await this.paramsModule.setUserId(userId);
-    await this.paramsModule.setDefaultNotificationImage(initParams.defaultNotificationImage || '');
-    await this.paramsModule.setDefaultNotificationTitle(initParams.defaultNotificationTitle || '');
-
-    // Build initial params
-    const pushwooshUrl = await this.paramsModule.apiUrl;
-    const params = this.params = {
-      autoSubscribe: true,
-      serviceWorkerUrl: null,
-      pushwooshUrl,
-      ...initParams,
-      deviceType: this.platformChecker.platform,
-      tags: {
-        Language: navigator.language || 'en',
-        ...initParams.tags,
-        'Device Model': this.platformChecker.browserVersion,
-      },
-      driversSettings: {
-        worker: {
-          serviceWorkerUrl: DEFAULT_SERVICE_WORKER_URL,
-          applicationServerPublicKey: undefined,
-          ...(initParams.driversSettings && initParams.driversSettings.worker),
-        }
-      },
-      subscribeWidget: {
-        enable: false,
-        ...initParams.subscribeWidget,
-      },
-      inboxWidget: {
-        enable: false,
-        ...initParams.inboxWidget,
-      },
-      subscribePopup: {
-        enable: false,
-        ...initParams.subscribePopup,
-      }
-    };
-    this.subscribeWidgetConfig = params.subscribeWidget;
-    this.inboxWidgetConfig = params.inboxWidget;
-    this.subscribePopupConfig = params.subscribePopup;
-
-    // Set log level
-    const manualDebug = localStorage.getItem(MANUAL_SET_LOGGER_LEVEL);
-    Logger.setLevel(manualDebug || logLevel);
-
-    // Init worker driver
-    if (this.platformChecker.isAvailableServiceWorker) {
-      const {worker} = params.driversSettings;
-      this.driver = new WorkerDriver({
-        eventEmitter: this._ee,
-        scope,
-        applicationCode,
-        serviceWorkerUrl: params.serviceWorkerUrl,
-        applicationServerPublicKey: worker.applicationServerPublicKey
-      });
-      try {
-        if (this.driver && this.driver.initWorker) {
-          await this.driver.initWorker();
-        }
-      } catch (error) {
-        Logger.write('error', error, 'driver initialization failed');
-      }
-    }
-
-    // Init safari driver
-    else if (this.platformChecker.isSafari && params.safariWebsitePushID) {
-      this.driver = new SafariDriver({
-        eventEmitter: this._ee,
-        applicationCode,
-        pushwooshUrl,
-        pushwooshApiUrl: params.pushwooshApiUrl,
-        webSitePushID: params.safariWebsitePushID,
-      });
-      this._ee.on(EVENT_ON_READY, () => {
-        const hashReg: any = /#P(.*)/;
-        const hash = decodeURIComponent(document.location.hash);
-
-        if (hashReg.test(hash)) {
-          this.api
-            .pushStat(hashReg.exec(hash)[1])
-            .then(clearLocationHash);
-        }
-      });
-    } else {
-      throw new Error('can\'t initialize safari')
-    }
-
-    // Default actions on init
-    try {
-      await this.defaultProcess();
-      if ('serviceWorker' in navigator) {
-        // @ts-ignore
-        navigator.serviceWorker.onmessage = this.onServiceWorkerMessage;
-      }
-    } catch (err) {
-      Logger.write('error', err, 'defaultProcess fail');
-    }
-
-    localStorage.setItem('pushwoosh-websdk-status', 'init');
-
-    // Dispatch "pushwoosh.initialized" event
-    const event = new CustomEvent('pushwoosh.initialized', {detail: {pw: this}});
-    document.dispatchEvent(event);
   }
 
   /**
@@ -438,536 +733,125 @@ class Pushwoosh {
   }
 
   /**
-   *
-   * @returns {Promise<void>}
-   */
-  private async initApi() {
-    const {params} = this;
-    const driverApiParams = await this.driver.getAPIParams();
-    const lastOpenMessage = await keyValue.get(KEY_LAST_OPEN_MESSAGE) || {};
-
-    // TODO apiParams will be deprecated in next minor version
-    const apiParams: TPWAPIParams = {
-      ...driverApiParams,
-      deviceType: params.deviceType,
-      deviceModel: params.tags['Device Model'],
-      applicationCode: params.applicationCode,
-      language: params.tags.Language,
-    };
-    if (params.userId) {
-      apiParams.userId = params.userId
-    }
-
-    await Promise.all([
-      keyValue.extend(KEY_INIT_PARAMS, validateParams(this.params)),
-      keyValue.extend(KEY_API_PARAMS, driverApiParams)
-    ]);
-
-    this.api = new API(apiParams, lastOpenMessage);
-  }
-
-  /**
-   * Method initializes the permission dialog on the device
-   * and registers through the API in case the device hasn't been registered before.
-   * @returns {Promise<void>}
-   */
-  public async subscribe() {
-    const isCommunicationEnabled = await this.isCommunicationEnabled();
-
-    if (!isCommunicationEnabled) {
-      Logger.write('error', 'Communication is disabled');
-      return;
-    }
-    try {
-
-      const subscribed = await this.driver.isSubscribed();
-
-      const isManuallyUnsubscribed = await keyValue.get(MANUAL_UNSUBSCRIBE);
-      const isAutoSubscribe = this._initParams.autoSubscribe;
-
-      if (isManuallyUnsubscribed && isAutoSubscribe) {
-        return;
-      }
-
-      await this.driver.askSubscribe(this.isDeviceRegistered());
-
-      // always re-register device, because push credentials(pushToken, fcmToken, fcmPushSet) always updated
-      await this.registerDuringSubscribe();
-
-      if (!subscribed) {
-        await this.onSubscribeEmitter();
-      }
-    } catch (error) {
-      Logger.write('error', error, 'subscribe fail');
-    }
-  }
-
-
-  /**
-   * force subscribe if there was a manual unsubscribe
-   * @returns {Promise<void>}
-   */
-  public async forceSubscribe() {
-    const isCommunicationEnabled = await this.isCommunicationEnabled();
-
-    if (!isCommunicationEnabled) {
-      Logger.write('error', 'Communication is disabled');
-      return;
-    }
-
-    try {
-      const subscribed = await this.driver.isSubscribed();
-
-      await this.driver.askSubscribe(this.isDeviceRegistered());
-
-      // always re-register device, because push credentials(pushToken, fcmToken, fcmPushSet) always updated
-      await this.registerDuringSubscribe();
-
-      if (!subscribed) {
-        await this.onSubscribeEmitter();
-      }
-    } catch (error) {
-      Logger.write('error', error, 'subscribe fail');
-    }
-  }
-
-  /**
-   * Registers and initializes the API.
-   * @returns {Promise<void>}
-   */
-  private async registerDuringSubscribe() {
-    const subscribed = await this.driver.isSubscribed();
-    if (this.platformChecker.isSafari) {
-      const force = await this.needForcedOpen();
-      await this.open(force);
-      await this.inboxModel.updateMessages();
-    }
-    await this.register(subscribed);
-  }
-
-  /**
-   * Emit events
-   * @returns {Promise<void>}
-   */
-  private async onSubscribeEmitter() {
-    const subscribed = await this.driver.isSubscribed();
-    if (subscribed) {
-      this._ee.emit(EVENT_ON_SUBSCRIBE);
-    }
-  }
-
-  /**
-   * Unsubscribe device.
-   * @returns {Promise<void>}
-   */
-  public async unsubscribe(notify: boolean = true) {
-    try {
-      await this.driver.unsubscribe();
-      await this.api.unregisterDevice();
-      if (notify) {
-        this._ee.emit(EVENT_ON_UNSUBSCRIBE);
-      }
-    } catch (e) {
-      Logger.write('error', e, 'Error occurred during the unsubscribe');
-    }
-  }
-
-  /**
-   * Check device's registration status
-   * @returns {boolean}
-   */
-  public isDeviceRegistered(): boolean {
-    return localStorage.getItem(KEY_DEVICE_REGISTRATION_STATUS) === DEVICE_REGISTRATION_STATUS_REGISTERED;
-  }
-
-  public isDeviceUnregistered(): boolean {
-    return localStorage.getItem(KEY_DEVICE_REGISTRATION_STATUS) === DEVICE_REGISTRATION_STATUS_UNREGISTERED;
-  }
-
-  /**
-   * Check device's subscription status
-   * @returns {Promise<boolean>}
-   */
-  public async isSubscribed(): Promise<boolean> {
-    const deviceRegistration = this.platformChecker.isSafari || this.isDeviceRegistered();
-    return deviceRegistration && this.driver.isSubscribed() || false;
-  }
-
-  /**
-   * Registers the device and stores the information in the IndexedDB.
-   * @param {boolean} forceRequests
-   * @returns {Promise<void>}
-   */
-  private async register(forceRequests?: boolean) {
-    if (!this.api) {
-      throw new Error('API is not inited');
-    }
-
-    const isCommunicationEnabled = await this.isCommunicationEnabled();
-
-    if (!isCommunicationEnabled) {
-      return;
-    }
-
-    const {
-      [KEY_SDK_VERSION]: savedSDKVersion,
-      [KEY_API_PARAMS]: savedApiParams,
-      [KEY_INIT_PARAMS]: savedInitParams
-    } = await keyValue.getAll();
-
-    const apiParams = await this.driver.getAPIParams();
-
-    const params = this.params;
-
-    const shouldRegister = !(
-      getVersion() === savedSDKVersion &&
-      JSON.stringify(savedApiParams) === JSON.stringify(apiParams) &&
-      JSON.stringify(savedInitParams.tags) === JSON.stringify(params.tags)
-    );
-
-    if (shouldRegister || forceRequests) {
-      await Promise.all([
-        keyValue.set(KEY_API_PARAMS, apiParams),
-        keyValue.extend(KEY_INIT_PARAMS, {tags: params.tags}),
-        keyValue.set(KEY_SDK_VERSION, getVersion()),
-      ]);
-      await Promise.all([
-        this.api.registerDevice(),
-        this.api.setTags({...params.tags}),
-        this.api.registerUser()
-      ]);
-      this._ee.emit(EVENT_ON_REGISTER);
-    }
-  }
-
-  /**
-   * Check current communication state
-   * @returns {Promise<boolean>}
-   */
-  public async isCommunicationEnabled() {
-    const isEnabled = await keyValue.get(KEY_COMMUNICATION_ENABLED);
-    return isEnabled !== 0;
-  }
-
-  /**
-   * Send "GDPRConsent" postEvent and depends on param "isEnabled"
-   * device will be registered/unregistered from all communication channels.
-   * @param {boolean} isEnabled
-   * @returns {Promise<void>}
-   */
-  public async setCommunicationEnabled(isEnabled: boolean = true) {
-    if (!this.api) {
-      throw new Error('API is not inited');
-    }
-    const {deviceType: device_type} = await this.getParams();
-    await this.api.postEvent(EVENT_GDPR_CONSENT, {channel: !!isEnabled, device_type});
-    await keyValue.set(KEY_COMMUNICATION_ENABLED, isEnabled ? 1 : 0);
-
-    this._ee.emit(EVENT_ON_CHANGE_COMMUNICATION_ENABLED, !!isEnabled);
-
-    if (!!isEnabled) {
-      return this.api.registerDevice();
-    } else {
-      return this.api.unregisterDevice();
-    }
-  }
-
-  /**
-   * Send "GDPRDelete" postEvent and remove all device device data from Pushwoosh.
-   * @returns {Promise<void>}
-   */
-  public async removeAllDeviceData() {
-    if (!this.api) {
-      throw new Error('API is not inited');
-    }
-    const {deviceType: device_type} = await this.getParams();
-    const currentTags = await this.api.getTags();
-    const clearTags = Object.keys(currentTags.result).reduce(
-      (acc: any, tagName: string) => {
-        acc[tagName] = null;
-        return acc;
-      }, {});
-    await this.api.postEvent(EVENT_GDPR_DELETE, {status: true, device_type});
-    await Promise.all([
-      this.api.setTags(clearTags),
-      this.api.unregisterDevice()
-    ]);
-    return keyValue.set(KEY_DEVICE_DATA_REMOVED, 1);
-  }
-
-  /**
    * Check device's session and call the appOpen method,
    * no more than once an hour.
    * Force need to Safari await subscribe status
-   * @param {boolean} force
+   * @param {boolean} isForce
    * @returns {Promise<void>}
    */
-  private async open(force?: boolean) {
-    const apiParams = await this.driver.getAPIParams();
-    const curTime = Date.now();
-    const val = await keyValue.get(KEY_LAST_SENT_APP_OPEN);
-    const lastSentTime = isNaN(val) ? 0 : Number(val);
+  private async open(isForce?: boolean) {
+    let lastApplicationOpenTime = await this.data.getLastOpenApplicationTime();
+    const currentTime = Date.now();
 
-    // Safari device not registered
-    if (this.platformChecker.isSafari && !apiParams.hwid) {
+    if (!lastApplicationOpenTime) {
+      lastApplicationOpenTime = 0;
+    }
+
+    const isSendingPeriodExceeded = currentTime - lastApplicationOpenTime < CONSTANTS.PERIOD_SEND_APP_OPEN;
+    const needSendOpenStatistics = isForce || !isSendingPeriodExceeded;
+
+    if (!needSendOpenStatistics) {
       return;
     }
 
-    if (force || (curTime - lastSentTime) > PERIOD_SEND_APP_OPEN) {
-      const hourlyActions = [
-        keyValue.set(KEY_LAST_SENT_APP_OPEN, curTime || Date.now()),  // Set timer
-        this.api.applicationOpen()  // Application open statistic
-      ];
-
-      await Promise.all(hourlyActions);
-    }
-
-  }
-
-  /**
-   * Check if device's permission status is changed and the appOpen method should be called
-   * @returns {Promise<any>}
-   */
-  private async needForcedOpen() {
-    if (!this.platformChecker.isSafari) {
-      return Promise.resolve(false);
-    }
-    const previousPermission = await keyValue.get(KEY_SAFARI_PREVIOUS_PERMISSION);
-    const currentPermission = await this.driver.getPermission();
-    const compare = (prev: string, curr: string) => prev !== PERMISSION_GRANTED && curr === PERMISSION_GRANTED;
-    await keyValue.set(KEY_SAFARI_PREVIOUS_PERMISSION, currentPermission);
-    const result = compare(this.permissionOnInit, currentPermission) || compare(previousPermission, currentPermission);
-    return Promise.resolve(result);
-  }
-
-
-  /**
-   * Check is device register in local, but unregister on server
-   * And reregister it if so
-   */
-  private async healthCheck(hwid: string) {
-    try {
-      const { exist, push_token_exist } = await this.api.checkDevice(this.params.applicationCode, hwid);
-
-      if (exist && push_token_exist) {
-        return;
-      } else {
-        await this.api.registerDevice()
-      }
-    } catch (error) {
-      const data = await keyValue.getAll();
-
-      await sendFatalLogToRemoteServer({
-        message: 'Error in healthCheck',
-        code: 'FATAL-API-002',
-        error,
-        applicationCode: data['params.applicationCode'],
-        workerVersion: data['WORKER_VERSION']
-      });
-    }
-  }
-
-  /**
-   * Default process during PW initialization.
-   * Init API. Subscription to notifications.
-   * Emit delayed events.
-   * @returns {Promise<void>}
-   */
-  private async defaultProcess() {
-    const {autoSubscribe = true} = this.params || {};
-    this.permissionOnInit = await this.driver.getPermission();
-
-    await this.initApi();
-    await this.open();
-    const apiParams = await this.api.getParams();
-    const {
-      hwid,
-      applicationCode
-    } = apiParams;
-
-    await this.healthCheck(hwid);
-
-    const config = await this.onGetConfig(['page_visit']);
-
-    if (config && config.response && config.response.features) {
-      if (config.response.features.page_visit && config.response.features.page_visit.enabled) {
-        await keyValue.set(PAGE_VISITED_URL, config.response.features.page_visit.entrypoint);
-        this.sendStatisticsVisitedPage();
-      }
-    }
-
-
-    if (!this.platformChecker.isSafari || (this.platformChecker.isSafari && apiParams.hwid)) {
-      await this.inboxModel.updateMessages(this._ee);
-    }
-
-    if (this.driver.isNeedUnsubscribe) {
-      const needUnsubscribe = await this.driver.isNeedUnsubscribe() && this.isDeviceRegistered();
-      if (needUnsubscribe) {
-        await this.unsubscribe(false);
-        await keyValue.set(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS, true);
-      }
-
-    }
-
-    if (this._isNeedResubscribe) {
-      await this.unsubscribe(false);
-    }
-
-    // can't call any api methods if device data is removed
-    const dataIsRemoved = await keyValue.get(KEY_DEVICE_DATA_REMOVED);
-    if (dataIsRemoved) {
-      Logger.write('error', 'Device data has been removed');
-      return;
-    }
-
-    // Actions depending of the permissions
-    switch (this.permissionOnInit) {
-      case PERMISSION_DENIED:
-        this._ee.emit(EVENT_ON_PERMISSION_DENIED);
-        // if permission === PERMISSION_DENIED and device is registered do unsubscribe (unregister device)
-        if (!this.platformChecker.isSafari && this.isDeviceRegistered()) {
-          await this.unsubscribe();
-        }
-        localStorage.removeItem(KEY_DEVICE_REGISTRATION_STATUS);
-        break;
-      case PERMISSION_PROMPT:
-        // if permission === PERMISSION_PROMPT and device is registered do unsubscribe (unregister device)
-        if (!this.platformChecker.isSafari && this.isDeviceRegistered()) {
-          await this.unsubscribe();
-        }
-        localStorage.removeItem(KEY_DEVICE_REGISTRATION_STATUS);
-
-        if (autoSubscribe && !this.platformChecker.isSafari) {
-          await this.subscribe();
-        } else {
-          this._ee.emit(EVENT_ON_PERMISSION_PROMPT);
-        }
-        break;
-      case PERMISSION_GRANTED:
-
-        const isSubscribed = await this.isSubscribed();
-
-        // if set autoSubscribe and user allowed send push and he is not subscribed -> resubscribe
-        if (!isSubscribed) {
-          await this.subscribe();
-        }
-
-        this._ee.emit(EVENT_ON_PERMISSION_GRANTED);
-        const trySubscribe = await keyValue.get(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS); // try subscribe if unsubscribed due to undefined fcm keys PUSH-16049
-
-        // if permission === PERMISSION_GRANTED and device is not registered do subscribe
-        if (
-          (!this.platformChecker.isSafari && !this.isDeviceRegistered() && !this.isDeviceUnregistered())
-          || this._isNeedResubscribe
-          || trySubscribe
-          ) {
-          await this.subscribe();
-          await keyValue.set(KEY_UNSUBSCRIBED_DUE_TO_UNDEFINED_KEYS, false);
-        }
-        break;
-      default:
-        Logger.write('error', this.permissionOnInit, 'unknown permission value');
-    }
-
-    await this.initApi();
-    await this.register();
-
-    // Safari await subscribe status
-    const force = await this.needForcedOpen();
-    if (force) {
-      await this.open(true);
-    }
-
-    this._ee.emit(EVENT_ON_READY);
-    this.ready = true;
-
-    const delayedEvent = await keyValue.get(KEY_DELAYED_EVENT);
-    if (delayedEvent) {
-      const {type, payload} = delayedEvent;
-      await this._ee.emit(type, payload);
-      await keyValue.set(KEY_DELAYED_EVENT, null);
-    }
-  }
-
-  /**
-   * Method returns hardware id.
-   * @returns {Promise<string>}
-   */
-  public async getHWID() {
-    const {hwid} = await this.driver.getAPIParams();
-    return Promise.resolve(hwid);
-  }
-
-  /**
-   * Method returns push token.
-   * @returns {Promise<string>}
-   */
-  async getPushToken() {
-    const {pushToken} = await this.driver.getAPIParams();
-    return Promise.resolve(pushToken);
-  }
-
-  /**
-   * Method returns userId
-   * @returns {Promise<string | null>}
-   */
-  async getUserId() {
-    const {userId}: IPWParams = await this.getParams();
-    return userId || this.params.userId || null;
-  }
-
-  /**
-   * Method returns an object with all params.
-   * @returns {Promise<IPWParams>}
-   */
-  public async getParams() {
-    const {
-      [KEY_API_PARAMS]: apiParams,
-      [KEY_INIT_PARAMS]: initParams,
-    } = await keyValue.getAll();
-
-    return {...apiParams, ...initParams};
-  }
-
-  /**
-   * Method returns  true if notifications available.
-   * @returns {boolean}
-   */
-  public  isAvailableNotifications() {
-    return this.platformChecker.isAvailableNotifications;
-  }
-
-  public async sendStatisticsVisitedPage() {
-    const {
-      document: { title },
-      location: { origin, pathname, href }
-    } = window;
-
-    this.api.pageVisit({
-      title,
-      url_path: `${origin}${pathname}`,
-      url: href
-    });
+    await this.data.setLastOpenApplicationTime(currentTime);
+    await this.api.applicationOpen();
   }
 
   private async onGetConfig(features: string[]) {
+    const response = await this.api.getConfig(features);
+
+    await this.data.setFeatures(response && response.features);
+
+    return response && response.features;
+  }
+
+  private async initPushNotifications(params: IInitParams): Promise<void> {
+    await this.data.setDefaultNotificationImage(params.defaultNotificationImage);
+    await this.data.setDefaultNotificationTitle(params.defaultNotificationTitle);
+    await this.data.setServiceWorkerUrl(params.serviceWorkerUrl);
+    await this.data.setServiceWorkerScope(params.scope);
+
+    await this.data.setInitParams({
+      autoSubscribe: true,
+      ...params,
+    });
+
+    await this.initDriver();
+
+    const features = await this.onGetConfig(['page_visit', 'channels', 'vapid_key', 'web_in_apps', 'events']);
+
+    if (features) {
+      // page visited feature
+      if (features.page_visit && features.page_visit.enabled) {
+        await keyValue.set(CONSTANTS.PAGE_VISITED_URL, features.page_visit.entrypoint);
+        this.sendStatisticsVisitedPage();
+      }
+
+      // send default event, page visited
+      if (features.events && features.events.length) {
+        const isPageVisitedEvent = features.events.some(
+          ((event: string): boolean => event  === CONSTANTS.EVENT_PW_SITE_OPENED)
+        );
+        if (isPageVisitedEvent) {
+          this.sendPostEventVisitedPage();
+        }
+      }
+
+      // channels
+      if (features.channels) {
+        await keyValue.set(CONSTANTS.CHANNELS, features.channels);
+      }
+
+      // vapid key
+      if (features.vapid_key) {
+        await this.data.setApplicationServerKey(features.vapid_key)
+      }
+
+      // init web in apps
+      if (features.web_in_apps) {
+        await keyValue.set('isEnableWebInApps', features.web_in_apps.enabled);
+      }
+    }
+
+    // Default actions on init
     try {
-      const config = await this.api.getConfig(features);
-
-      return config && config.response;
+      await this.defaultProcess(params);
     } catch (error) {
-      const data = await keyValue.getAll();
-
-      await sendFatalLogToRemoteServer({
-        message: 'Error in getConfig',
-        code: 'FATAL-API-002',
-        error,
-        applicationCode: data['params.applicationCode'],
-        workerVersion: data['WORKER_VERSION']
-      });
+      Logger.error(error, 'Internal error: defaultProcess fail');
     }
   }
-}
 
-export default Pushwoosh;
+  private async initDriver(): Promise<void> {
+    if (this.platformChecker.isSafari) {
+      const { safariWebsitePushID: webSitePushId } = await this.data.getInitParams();
+
+      if (!webSitePushId) {
+        throw new Error('For work with Safari Push Notification add safariWebsitePushID to initParams!');
+      }
+
+      this.driver = new PushServiceSafari(this.api, this.data, { webSitePushId });
+
+      return;
+    }
+
+    if (this.platformChecker.isAvailableServiceWorker) {
+      this.driver = new PushServiceDefault(this.api, this.data, {});
+
+      return;
+    }
+  }
+
+  public async sendPostEventVisitedPage() {
+    const {
+      document: { title },
+      location: { href }
+    } = window;
+
+    this.api.postEvent(CONSTANTS.EVENT_PW_SITE_OPENED, {
+      url: href,
+      title: title,
+      device_type: this.platformChecker.platform
+    });
+  }
+}

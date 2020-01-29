@@ -1,22 +1,20 @@
 <script type="text/javascript">
-  function InAppPushManager() {
+  function PushwooshPushManagerBridge() {
     var self = this;
     var absoluteURLPattern = new RegExp('^(?:[a-z]+:)?//', 'i');
 
     self.closeInApp = function (options) {
-      window.parent.postMessage({
-        name: 'InAppPushManager',
+      PushwooshSendMessage({
         method: 'closeInApp',
         options: options,
-      }, '*');
+      });
     };
 
-    self.openNewLink = function (options) {
-      window.parent.postMessage({
-        name: 'InAppPushManager',
-        method: 'openNewLink',
+    self.openLink = function (options) {
+      PushwooshSendMessage({
+        method: 'openLink',
         options: options,
-      }, '*');
+      });
     };
 
     window.addEventListener('load', function () {
@@ -38,13 +36,16 @@
           otherLinks[j].addEventListener('click', function (event) {
             event.preventDefault();
 
-            self.openNewLink({ href: event.target.href });
+            self.openLink({
+              href: event.target.href
+            });
+
             self.closeInApp();
           });
         }
       }
-    })
+    });
   }
 
-  window.pushManager = new InAppPushManager();
+  window.pushManager = new PushwooshPushManagerBridge();
 </script>

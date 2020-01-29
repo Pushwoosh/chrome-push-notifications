@@ -6,7 +6,7 @@ import {
   MAX_NOTIFICATION_DURATION,
   MIN_NOTIFICATION_DURATION
 } from '../constants';
-import Params from '../modules/data/Params';
+import { Data } from '../modules/Data/Data';
 import DateModule from '../modules/DateModule';
 import {parseSerializedNotificationParams} from '../functions';
 
@@ -16,13 +16,13 @@ import {parseSerializedNotificationParams} from '../functions';
  */
 export default class NotificationPayload {
   payload: INotificationPayload;
-  params: Params;
+  data: Data;
   code: string;
   dateModule: DateModule;
 
   constructor(
     payload: INotificationPayload | IChromeNotificationPayload,
-    params: Params = new Params(),
+    data: Data = new Data(),
     dateModule: DateModule = new DateModule()
   ) {
     // Set payload
@@ -34,17 +34,17 @@ export default class NotificationPayload {
       this.payload = <INotificationPayload>payload;
     }
 
-    this.params = params;
+    this.data = data;
     this.code = `notificationCode-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
     this.dateModule = dateModule;
   }
 
   async getIcon(): Promise<string> {
-    return this.payload.i || await this.params.defaultNotificationImage;
+    return this.payload.i || await this.data.getDefaultNotificationImage();
   }
 
   async getTitle(): Promise<string> {
-    return this.payload.header || await this.params.defaultNotificationTitle;
+    return this.payload.header || await this.data.getDefaultNotificationTitle();
   }
 
   get silent(): boolean {
@@ -176,10 +176,10 @@ export default class NotificationPayload {
     const requireInteraction = this.duration === 0 || this.duration >= MIN_NOTIFICATION_DURATION;
     return {
       renotify: true,
+      requireInteraction,
       ...this.rootParams,
       body: this.body,
       icon,
-      requireInteraction,
       tag: JSON.stringify({
         url: this.link,
         messageHash: this.messageHash,

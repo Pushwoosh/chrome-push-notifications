@@ -1,9 +1,8 @@
 import Storage from '../modules/storage/Storage';
-import Params from '../modules/data/Params';
-import InboxParams from '../modules/data/InboxParams';
 import DateModule from '../modules/DateModule';
-import ApiClient from '../modules/api/ApiClient';
-import PayloadBuilder from '../modules/api/PayloadBuilder';
+
+import { Data } from '../modules/Data/Data';
+import { Api } from '../modules/Api/Api';
 
 import InboxMessagesPublic from '../modules/InboxMessagesPublic';
 
@@ -12,30 +11,24 @@ import {EVENT_ON_UPDATE_INBOX_MESSAGES} from '../constants';
 
 
 export default class InboxMessages {
+  data: Data;
+  api: Api;
   storage: Storage;
   storeName: TInboxMessagesStoreName;
-  params: Params;
-  inboxParams: InboxParams;
   dateModule: DateModule;
-  apiClient: ApiClient;
-  payloadBuilder: PayloadBuilder;
 
   constructor(
+    data: Data,
+    api: Api,
     storage: Storage = new Storage(),
-    params: Params = new Params(),
-    inboxParams: InboxParams = new InboxParams(),
     dateModule: DateModule = new DateModule(),
-    apiClient: ApiClient = new ApiClient(),
-    payloadBuilder: PayloadBuilder = new PayloadBuilder()
   ) {
+    this.data = data;
+    this.api = api;
+
     this.storage = storage;
     this.storeName = 'inboxMessages';
-
-    this.params = params;
-    this.inboxParams = inboxParams;
     this.dateModule = dateModule;
-    this.payloadBuilder = payloadBuilder;
-    this.apiClient = apiClient;
   }
 
   /**
@@ -43,8 +36,7 @@ export default class InboxMessages {
    */
   private async getInboxMessages(): Promise<IGetInboxMessagesResponse> {
     // get inbox messages
-    const payload = await this.payloadBuilder.getInboxMessages();
-    const response: IGetInboxMessagesResponse = await this.apiClient.getInboxMessages(payload);
+    const response: IGetInboxMessagesResponse = await this.api.getInboxMessages();
     await this.storeGetInboxMessagesRequestParams(response.next, response.new_inbox);
 
     return response;
@@ -57,10 +49,10 @@ export default class InboxMessages {
    */
   private async storeGetInboxMessagesRequestParams(next: string, newMessagesCount: number): Promise<void> {
     this.dateModule.date = new Date();
-    await this.inboxParams.setLastRequestTime(this.dateModule.getUtcTimestamp());
+    await this.data.setInboxLastRequestTime(this.dateModule.getUtcTimestamp());
 
-    await this.inboxParams.setLastRequestCode(next);
-    await this.inboxParams.setNewMessagesCount(newMessagesCount);
+    await this.data.setInboxLastRequestCode(next);
+    await this.data.setInboxNewMessagesCount(newMessagesCount);
   }
 
   /**
@@ -195,7 +187,11 @@ export default class InboxMessages {
     await this.putServerMessages(response.messages);
 
     if (eventEmitter) {
-      eventEmitter.emit(EVENT_ON_UPDATE_INBOX_MESSAGES, new InboxMessagesPublic());
+      eventEmitter.emit(EVENT_ON_UPDATE_INBOX_MESSAGES, new InboxMessagesPublic(
+        this.data,
+        this.api,
+        this
+      ));
     }
   }
 }
