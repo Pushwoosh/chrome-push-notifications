@@ -51,20 +51,8 @@ export class Api {
 
   public async checkDevice(): Promise<IMapResponse['checkDevice']> {
     const params = await this.getRequestParams();
-    const response = await this.apiClient.checkDevice(params);
 
-    // check is register
-    const isRegister = response.exist && response.push_token_exist;
-
-    // get current subscription status
-    const status = isRegister
-      ? CONSTANTS.DEVICE_REGISTRATION_STATUS_REGISTERED
-      : CONSTANTS.DEVICE_REGISTRATION_STATUS_UNREGISTERED;
-
-    // save to local storage subscription status
-    localStorage.setItem(CONSTANTS.KEY_DEVICE_REGISTRATION_STATUS, status);
-
-    return response;
+    return await this.apiClient.checkDevice(params);
   }
 
   public async checkDeviceSubscribeForPushNotifications(useCache: boolean = true): Promise<boolean> {
