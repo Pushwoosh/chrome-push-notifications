@@ -175,11 +175,20 @@ export class PushServiceDefault implements IPushService {
   private async registerServiceWorker(): Promise<void> {
     const url = await this.data.getServiceWorkerUrl();
     const scope = await this.data.getServiceWorkerScope();
-    const cacheClean = v4();
+    const sdkVersion = await this.data.getSdkVersion();
+    const serviceWorkerVersion = await this.data.getServiceWorkerVersion();
+
+    // add clean cache get parameter only if
+    // sdk version and service worker version is not equals
+    let cleanCache = '';
+
+    if (sdkVersion !== serviceWorkerVersion) {
+      cleanCache = `?cache_clean=${ v4() }`;
+    }
 
     await navigator
       .serviceWorker
-      .register(`${ url }?cache_clean=${ cacheClean }`, {
+      .register(`${ url }${ cleanCache }`, {
         scope
       });
   }

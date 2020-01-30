@@ -312,7 +312,7 @@ export class Data {
     await this.store.set('params.features', features);
   }
   public async getFeatures(): Promise<any> {
-    await this.store.get('params.features');
+    return await this.store.get('params.features');
   }
 
   public async setInitParams(params: any): Promise<any> {
@@ -360,5 +360,12 @@ export class Data {
     const newValue = await this.store.get('params.delayedEvent');
 
     return typeof newValue !== 'undefined' ? newValue : oldValue;
+  }
+
+  public async setInApps(inApps: any): Promise<void> {
+    await this.store.set('params.inApps', inApps);
+  }
+  public async getInApps(): Promise<any> {
+    return this.store.get('params.inApps');
   }
 }

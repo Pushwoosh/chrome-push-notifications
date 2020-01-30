@@ -98,7 +98,7 @@ interface IResponseGetConfig {
       entrypoint: string;
       enabled: boolean;
     };
-    channels?: Array<{ name: string; code: string; }>;
+    channels?: Array<{ name: string; code: string; position: number }>;
     vapid_key?: string;
     web_in_apps?: {
       enabled: boolean;

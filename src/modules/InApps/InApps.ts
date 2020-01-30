@@ -1,14 +1,13 @@
 import { ApiClient } from '../ApiClient/ApiClient';
 import { Api } from '../Api/Api';
-import {keyValue} from '../../storage';
 import {CommandBus, TCommands} from '../CommandBus/CommandBus';
-import {EventBus, TEvents} from '../EventBus/EventBus';
+import {EventBus} from '../EventBus/EventBus';
 import {Connector} from '../Connector/Connector';
 import {Modal} from '../Modal/Modal';
 import {RichMedia} from '../RichMedia/RichMedia';
 import {ExpanderPushManager, ExpanderPushwoosh, ExpanderPushwooshSendMessage} from './expanders/expanders';
 
-import {CHANNELS} from '../../constants';
+import { Data } from '../Data/Data';
 
 import {IInAppsOptions} from './InApps.types';
 
@@ -19,23 +18,25 @@ export class InApps {
   private eventBus: EventBus;
   private connector: Connector;
   private readonly apiClient: ApiClient;
-  private readonly store: typeof keyValue;
   private readonly api: Api;
+  private readonly data: Data;
   private delayInApps: string[] = [];
   public isLoadedInAppsList: boolean = false;
   public inApps: IInApp[];
   public modal: Modal;
 
-  constructor(options: IInAppsOptions, api: Api, apiClient = new ApiClient(), store = keyValue) {
+
+  constructor(options: IInAppsOptions, api: Api, apiClient = new ApiClient()) {
     this.options = options;
     this.apiClient = apiClient;
-    this.store = store;
     this.api = api;
     this.modal = new Modal(this.options && this.options.modal ? this.options.modal : {});
 
     this.connector = new Connector();
     this.commandBus = CommandBus.getInstance();
     this.eventBus = EventBus.getInstance();
+
+    this.data = new Data();
   }
 
   public async init(): Promise<void> {
@@ -65,7 +66,7 @@ export class InApps {
 
     this.isLoadedInAppsList = true;
 
-    await keyValue.set('inApps', inApps);
+    await this.data.setInApps(inApps);
 
     this.inApps = inApps;
   }
@@ -123,8 +124,8 @@ export class InApps {
           });
         break;
       case 'getChannels':
-        keyValue.get('CHANNELS')
-          .then((channels: unknown[]) => {
+        this.data.getFeatures()
+          .then(({ channels }: { channels: unknown[] }) => {
             this.commandBus.emit(TCommands.POST_MESSAGE_TO_IFRAME, {
               code: message.code,
               channels

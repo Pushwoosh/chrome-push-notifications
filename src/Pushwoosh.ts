@@ -4,6 +4,8 @@ import { Api } from './modules/Api/Api';
 import { Data } from './modules/Data/Data';
 import { ApiClient } from './modules/ApiClient/ApiClient';
 import { PushServiceDefault, PushServiceSafari } from './services/PushService/PushService';
+import { Popup } from './features/Popup/Popup';
+import { SubscriptionPopupWidget } from './features/SubscriptionSegmentsWidget/SubscriptionSegmentsWidget';
 
 import * as CONSTANTS from './constants';
 
@@ -34,6 +36,7 @@ export default class Pushwoosh {
   private isCommunicationDisabled?: boolean;
 
   public readonly api: Api;
+  public readonly subscriptionSegmentWidget: SubscriptionPopupWidget;
 
   public driver: IPushService;
 
@@ -115,6 +118,11 @@ export default class Pushwoosh {
           this.eventBus.emit(TEvents.CHECK_IS_MANUAL_UNSUBSCRIBED, { state: state }, commandId);
         });
     });
+
+    const popup = new Popup('subscription-segments');
+    // need inject this because need call subscribe method
+    // can't use command bus, because need call synchronically
+    this.subscriptionSegmentWidget = new SubscriptionPopupWidget(this.data, this.apiClient, this.api, popup, this);
   }
 
   /**
@@ -498,18 +506,19 @@ export default class Pushwoosh {
 
     await this.open();
 
-    // step 7: init push notification
+    // step 7: init submodules module in app (need before push notification because in apps use in subscription segments widget)
+    await this.initInApp(params);
+
+    // step 8: init push notification
     if (this.platformChecker.isAvailableNotifications) {
       await this.initPushNotifications(params);
     }
 
-    // step 8: init submodules module
+    // step 9: init submodules (inbox, facebook)
     await this.inboxModel.updateMessages(this._ee);
-
-    await this.initInApp(params);
     await this.initFacebook(params);
 
-    // step 9: ready
+    // step 10: ready
     this._ee.emit(CONSTANTS.EVENT_ON_READY);
     this.ready = true;
 
@@ -562,6 +571,7 @@ export default class Pushwoosh {
     const isCommunicationDisabled = await this.data.getStatusCommunicationDisabled();
     const isDropAllData = await this.data.getStatusDropAllData();
     const isNeedResubscribe = await this.driver.checkIsNeedResubscribe();
+    const isAvailableSubscriptionSegments = await this.isEnableChannels();
 
     if (isCommunicationDisabled || isDropAllData) {
       await this.unsubscribe();
@@ -589,11 +599,18 @@ export default class Pushwoosh {
           await this.unsubscribe();
         }
 
-        // for get user click
-        if (autoSubscribe) {
-          console.warn('Option autoSubscribe well be deprecated on 14 February 2020. Please use "Push Subscription Button" or "Custom Subscription Popup"');
+        // method subscribe need user click
+        if (autoSubscribe && !isAvailableSubscriptionSegments) {
+          console.warn('Option autoSubscribe have been deprecated. Please use "Push Subscription Button" or "Custom Subscription Popup"');
 
           this.subscribe();
+        }
+
+        // show subscription segment widget
+        if (autoSubscribe && isAvailableSubscriptionSegments) {
+          await this.subscriptionSegmentWidget.init();
+
+          this.subscriptionSegmentWidget.showPopup();
         }
 
         break;

@@ -298,8 +298,16 @@ class SubscribeWidget {
   }
 
   onClickBellIfEnableChannels() {
-    // need show subscription segment in-app
     this.pw.push((api) => {
+      // if permission default
+      // show subscription segment widget
+      if (this.pw.driver.checkIsPermissionDefault()) {
+        this.pw.subscriptionSegmentWidget.showPopup();
+
+        return;
+      }
+
+      // else need show subscription segment in-app for work width subscription segments
       api.postEvent(SUBSCRIPTION_SEGMENT_EVENT, {});
     });
   }
